@@ -1,0 +1,216 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidUserProfile(data) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.displayName is string && data.displayName.size() > 0 && data.displayName.size() <= 50 &&
+             !('phoneNumber' in data) &&
+             (!('phoneHash' in data) || (data.phoneHash is string && data.phoneHash.size() <= 64)) &&
+             (!('displayNameLower' in data) || (data.displayNameLower is string && data.displayNameLower.size() <= 50)) &&
+             (!('photoUrl' in data) || (data.photoUrl is string && data.photoUrl.size() <= 500000)) &&
+             (!('avatarColorHex' in data) || (data.avatarColorHex is string && data.avatarColorHex.size() <= 16)) &&
+             (!('statusText' in data) || (data.statusText is string && data.statusText.size() <= 200)) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt <= request.time));
+    }
+
+    function isValidStory(data, userId) {
+      return data.id is string && data.id.size() > 0 && data.id.size() <= 128 &&
+             data.userId is string && data.userId == userId &&
+             data.authorName is string && data.authorName.size() > 0 && data.authorName.size() <= 50 &&
+             (!('authorInitials' in data) || (data.authorInitials is string && data.authorInitials.size() <= 8)) &&
+             (!('avatarColorHex' in data) || (data.avatarColorHex is string && data.avatarColorHex.size() <= 16)) &&
+             data.caption is string && data.caption.size() <= 500 &&
+             (!('emojiTag' in data) || (data.emojiTag is string && data.emojiTag.size() <= 32)) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt <= request.time));
+    }
+
+    function isValidSticker(data, userId) {
+      return data.id is string && data.id.size() > 0 && data.id.size() <= 128 &&
+             data.userId is string && data.userId == userId &&
+             data.title is string && data.title.size() > 0 && data.title.size() <= 60 &&
+             (!('author' in data) || (data.author is string && data.author.size() <= 50)) &&
+             data.imageUri is string && data.imageUri.size() <= 500000 &&
+             (!('emojiBadge' in data) || (data.emojiBadge is string && data.emojiBadge.size() <= 32)) &&
+             (!('borderColorHex' in data) || (data.borderColorHex is string && data.borderColorHex.size() <= 16)) &&
+             (!('isVideo' in data) || data.isVideo is bool) &&
+             (!('frameTimestampMs' in data) || data.frameTimestampMs is int) &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    match /users/{userId} {
+      // Profils publics (nom, photo, statut, empreinte de numéro). Le numéro en clair est dans users/{uid}/private/contact.
+      allow get, list: if isSignedIn();
+      allow create: if isOwner(userId) && isValidId(userId) &&
+                       incoming().userId == userId &&
+                       incoming().keys().hasAll(['userId', 'displayName', 'createdAt']) &&
+                       incoming().keys().hasOnly(['userId', 'displayName', 'displayNameLower', 'phoneHash', 'photoUrl', 'avatarColorHex', 'statusText', 'createdAt', 'updatedAt']) &&
+                       isValidUserProfile(incoming());
+      allow update: if isOwner(userId) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'displayNameLower', 'phoneNumber', 'phoneHash', 'photoUrl', 'avatarColorHex', 'statusText', 'updatedAt']) &&
+                       isValidUserProfile(incoming());
+      allow delete: if isOwner(userId);
+
+      // Données privées du propriétaire : numéro en clair et jeton de notification (lu seulement par le serveur d'envoi)
+      match /private/{docId} {
+        allow get, list: if isOwner(userId);
+        allow create, update: if isOwner(userId) &&
+                                 (docId == 'contact' || docId == 'push') &&
+                                 incoming().keys().hasOnly(['phoneNumber', 'token', 'updatedAt']) &&
+                                 (!('phoneNumber' in incoming()) || (incoming().phoneNumber is string && incoming().phoneNumber.size() <= 32)) &&
+                                 (!('token' in incoming()) || (incoming().token is string && incoming().token.size() <= 4096)) &&
+                                 (!('updatedAt' in incoming()) || incoming().updatedAt == request.time);
+        allow delete: if isOwner(userId);
+      }
+
+      match /stories/{storyId} {
+        allow get, list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(storyId) &&
+                         incoming().id == storyId &&
+                         incoming().userId == userId &&
+                         incoming().keys().hasAll(['id', 'userId', 'authorName', 'caption', 'createdAt']) &&
+                         incoming().keys().hasOnly(['id', 'userId', 'authorName', 'authorInitials', 'avatarColorHex', 'caption', 'emojiTag', 'createdAt', 'updatedAt']) &&
+                         isValidStory(incoming(), userId);
+        allow update: if isOwner(userId) &&
+                         incoming().id == existing().id &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['caption', 'emojiTag', 'updatedAt']) &&
+                         isValidStory(incoming(), userId);
+        allow delete: if isOwner(userId);
+      }
+
+      match /stickers/{stickerId} {
+        allow get, list: if isSignedIn();
+        allow create: if isOwner(userId) && isValidId(stickerId) &&
+                         incoming().id == stickerId &&
+                         incoming().userId == userId &&
+                         incoming().keys().hasAll(['id', 'userId', 'title', 'imageUri', 'createdAt']) &&
+                         incoming().keys().hasOnly(['id', 'userId', 'title', 'author', 'imageUri', 'emojiBadge', 'borderColorHex', 'isVideo', 'frameTimestampMs', 'createdAt']) &&
+                         isValidSticker(incoming(), userId);
+        allow delete: if isOwner(userId);
+      }
+    }
+    // ------------------------------------------------------------------
+    // Discussions partagées entre deux utilisateurs
+    //   chats/{chatId}                 chatId = UID_A + "_" + UID_B (UID triés)
+    //   chats/{chatId}/messages/{id}
+    // Seuls les deux membres peuvent lire et écrire.
+    // ------------------------------------------------------------------
+    match /chats/{chatId} {
+      allow get: if isSignedIn() && (resource == null || request.auth.uid in resource.data.members);
+      allow list: if isSignedIn() && request.auth.uid in resource.data.members;
+
+      allow create: if isSignedIn() &&
+                       incoming().id == chatId &&
+                       incoming().keys().hasAll(['id', 'members', 'createdBy', 'createdAt']) &&
+                       incoming().keys().hasOnly(['id', 'members', 'createdBy', 'createdAt', 'updatedAt', 'lastMessage', 'lastMessageTimestamp', 'lastSenderId']) &&
+                       incoming().members is list &&
+                       incoming().members.size() == 2 &&
+                       incoming().members[0] is string && incoming().members[1] is string &&
+                       incoming().members[0] < incoming().members[1] &&
+                       chatId == incoming().members[0] + '_' + incoming().members[1] &&
+                       request.auth.uid in incoming().members &&
+                       incoming().createdBy == request.auth.uid &&
+                       incoming().createdAt == request.time &&
+                       (!('updatedAt' in incoming()) || incoming().updatedAt == request.time);
+
+      allow update: if isSignedIn() &&
+                       request.auth.uid in resource.data.members &&
+                       incoming().id == existing().id &&
+                       incoming().members == existing().members &&
+                       incoming().createdBy == existing().createdBy &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['lastMessage', 'lastMessageTimestamp', 'lastSenderId', 'updatedAt']) &&
+                       (!('lastMessage' in incoming().diff(existing()).affectedKeys()) ||
+                         (incoming().lastMessage is string && incoming().lastMessage.size() <= 200)) &&
+                       (!('lastSenderId' in incoming().diff(existing()).affectedKeys()) ||
+                         incoming().lastSenderId == request.auth.uid) &&
+                       (!('lastMessageTimestamp' in incoming().diff(existing()).affectedKeys()) ||
+                         incoming().lastMessageTimestamp == request.time) &&
+                       (!('updatedAt' in incoming().diff(existing()).affectedKeys()) ||
+                         incoming().updatedAt == request.time);
+
+      allow delete: if false;
+
+      function chatMembers() {
+        return get(/databases/$(database)/documents/chats/$(chatId)).data.members;
+      }
+
+      match /messages/{messageId} {
+        allow get, list: if isSignedIn() && request.auth.uid in chatMembers();
+
+        allow create: if isSignedIn() &&
+                         request.auth.uid in chatMembers() &&
+                         isValidId(messageId) &&
+                         incoming().id == messageId &&
+                         incoming().conversationId == chatId &&
+                         incoming().senderId == request.auth.uid &&
+                         incoming().keys().hasAll(['id', 'conversationId', 'senderId', 'senderName', 'content', 'type', 'status', 'createdAt']) &&
+                         incoming().keys().hasOnly(['id', 'conversationId', 'senderId', 'senderName', 'content', 'type', 'audioDurationSec', 'mediaUri', 'reactionEmoji', 'status', 'createdAt', 'updatedAt']) &&
+                         incoming().senderName is string && incoming().senderName.size() > 0 && incoming().senderName.size() <= 50 &&
+                         incoming().content is string && incoming().content.size() <= 5000 &&
+                         incoming().type in ['TEXT', 'AUDIO', 'IMAGE', 'DOCUMENT', 'SYSTEM', 'STICKER'] &&
+                         (!('audioDurationSec' in incoming()) || incoming().audioDurationSec is int) &&
+                         (!('mediaUri' in incoming()) || (incoming().mediaUri is string && incoming().mediaUri.size() <= 500000)) &&
+                         (!('reactionEmoji' in incoming()) || (incoming().reactionEmoji is string && incoming().reactionEmoji.size() <= 32)) &&
+                         incoming().status == 'SENT' &&
+                         incoming().createdAt == request.time &&
+                         (!('updatedAt' in incoming()) || incoming().updatedAt == request.time);
+
+        // Réaction : n'importe quel membre. Statut : seulement le DESTINATAIRE (pas l'expéditeur). Le contenu ne change jamais.
+        allow update: if isSignedIn() &&
+                         request.auth.uid in chatMembers() &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['reactionEmoji', 'status', 'updatedAt']) &&
+                         (!('reactionEmoji' in incoming().diff(existing()).affectedKeys()) ||
+                           (incoming().reactionEmoji is string && incoming().reactionEmoji.size() <= 32)) &&
+                         (!('status' in incoming().diff(existing()).affectedKeys()) ||
+                           (request.auth.uid != existing().senderId && incoming().status in ['DELIVERED', 'READ'])) &&
+                         (!('updatedAt' in incoming().diff(existing()).affectedKeys()) ||
+                           incoming().updatedAt == request.time);
+
+        // Suppression « pour tout le monde » : seulement l'auteur du message
+        allow delete: if isSignedIn() && resource.data.senderId == request.auth.uid;
+      }
+    }
+
+    // E-mails de confirmation (extension « Trigger Email ») : jamais lisibles par les clients,
+    // et chacun ne peut s'en envoyer qu'à lui-même.
+    match /mail/{mailId} {
+      allow read: if false;
+      allow create: if isSignedIn() &&
+                       request.auth.token.email != null &&
+                       request.resource.data.to == [request.auth.token.email] &&
+                       request.resource.data.keys().hasOnly(['to', 'message', 'createdAt']);
+    }
+  }
+}

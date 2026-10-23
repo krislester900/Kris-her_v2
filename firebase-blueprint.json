@@ -1,0 +1,122 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "The unique identifier for the user" },
+        "displayName": { "type": "string", "description": "The user display name" },
+        "photoUrl": { "type": "string", "description": "Profile picture URL or compressed image data" },
+        "avatarColorHex": { "type": "string", "description": "Color hex code for avatar" },
+        "statusText": { "type": "string", "description": "User bio or security status message" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp via serverTimestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last update timestamp via serverTimestamp" }
+      },
+      "required": ["userId", "displayName", "createdAt"]
+    },
+    "Conversation": {
+      "title": "Conversation",
+      "description": "Chat thread representation for a user",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier for the conversation" },
+        "userId": { "type": "string", "description": "Owner user identifier" },
+        "title": { "type": "string", "description": "Title or contact name for the conversation" },
+        "avatarColorHex": { "type": "string", "description": "Avatar background color" },
+        "avatarInitials": { "type": "string", "description": "Avatar initial letters" },
+        "isGroup": { "type": "boolean", "description": "Whether the conversation is a group" },
+        "lastMessage": { "type": "string", "description": "Preview text of the latest message" },
+        "lastMessageTimestamp": { "type": "string", "format": "date-time", "description": "Timestamp of the latest message" },
+        "unreadCount": { "type": "integer", "description": "Unread message count" },
+        "isPinned": { "type": "boolean", "description": "Whether this chat is pinned to top" },
+        "isFavorite": { "type": "boolean", "description": "Whether this chat is starred as favorite" },
+        "safetyFingerprint": { "type": "string", "description": "End-to-end encryption safety number" },
+        "isOnline": { "type": "boolean", "description": "Online presence status indicator" },
+        "statusText": { "type": "string", "description": "Encryption or status badge text" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last update timestamp" }
+      },
+      "required": ["id", "userId", "title", "createdAt"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "Individual message inside a conversation",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique message ID" },
+        "conversationId": { "type": "string", "description": "Parent conversation identifier" },
+        "userId": { "type": "string", "description": "Owner user identifier" },
+        "senderId": { "type": "string", "description": "Sender identifier" },
+        "senderName": { "type": "string", "description": "Sender display name" },
+        "content": { "type": "string", "description": "Message textual content" },
+        "type": { "type": "string", "description": "Type of message: TEXT, AUDIO, IMAGE, DOCUMENT, SYSTEM, STICKER" },
+        "audioDurationSec": { "type": "integer", "description": "Duration in seconds if audio note" },
+        "mediaUri": { "type": "string", "description": "Local or remote URI for media" },
+        "reactionEmoji": { "type": "string", "description": "Reaction emoji attached to message" },
+        "isEncrypted": { "type": "boolean", "description": "Whether message content is encrypted" },
+        "status": { "type": "string", "description": "Receipt status: SENDING, SENT, DELIVERED, READ" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp via serverTimestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last update timestamp via serverTimestamp" }
+      },
+      "required": ["id", "conversationId", "userId", "senderId", "senderName", "content", "type", "createdAt"]
+    },
+    "StatusStory": {
+      "title": "StatusStory",
+      "description": "Ephemeral status story",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique story identifier" },
+        "userId": { "type": "string", "description": "Author user identifier" },
+        "authorName": { "type": "string", "description": "Author display name" },
+        "authorInitials": { "type": "string", "description": "Author initials" },
+        "avatarColorHex": { "type": "string", "description": "Avatar color hex" },
+        "caption": { "type": "string", "description": "Story caption text" },
+        "emojiTag": { "type": "string", "description": "Story emoji tag" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last update timestamp" }
+      },
+      "required": ["id", "userId", "authorName", "caption", "createdAt"]
+    },
+    "CustomSticker": {
+      "title": "CustomSticker",
+      "description": "User created custom emoticon or sticker from gallery image or video",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique sticker ID" },
+        "userId": { "type": "string", "description": "Author user identifier" },
+        "title": { "type": "string", "description": "Sticker title or tag" },
+        "author": { "type": "string", "description": "Author display name" },
+        "imageUri": { "type": "string", "description": "URI or encoded image data" },
+        "emojiBadge": { "type": "string", "description": "Badge emoji attached" },
+        "borderColorHex": { "type": "string", "description": "Comic border color" },
+        "isVideo": { "type": "boolean", "description": "Whether sticker was created from video" },
+        "frameTimestampMs": { "type": "integer", "description": "Video frame timestamp in ms" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp" }
+      },
+      "required": ["id", "userId", "title", "imageUri", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "User profile document isolated per user"
+    },
+    "/users/{userId}/conversations/{conversationId}": {
+      "schema": { "$ref": "#/entities/Conversation" },
+      "description": "Conversations list isolated to the authenticated user"
+    },
+    "/users/{userId}/conversations/{conversationId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/Message" },
+      "description": "Messages under a specific conversation for the user"
+    },
+    "/users/{userId}/stories/{storyId}": {
+      "schema": { "$ref": "#/entities/StatusStory" },
+      "description": "Status stories created by the authenticated user"
+    },
+    "/users/{userId}/stickers/{stickerId}": {
+      "schema": { "$ref": "#/entities/CustomSticker" },
+      "description": "Custom stickers and emoticons created by user"
+    }
+  }
+}

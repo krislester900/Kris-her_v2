@@ -1,0 +1,17 @@
+rules_version = '2';
+
+// Médias des discussions : chats/{chatId}/media/{messageId}
+// chatId = UID_A + "_" + UID_B : seuls les deux membres peuvent téléverser, 25 Mo maximum, jamais modifiable.
+// (La lecture se fait par l'adresse de téléchargement, qui contient un jeton secret.)
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /chats/{chatId}/media/{messageId} {
+      allow get: if request.auth != null && request.auth.uid in chatId.split('_');
+      allow list: if false;
+      allow create: if request.auth != null &&
+                       request.auth.uid in chatId.split('_') &&
+                       request.resource.size < 25 * 1024 * 1024;
+      allow update, delete: if false;
+    }
+  }
+}

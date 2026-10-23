@@ -1,0 +1,8 @@
+{
+  "name": "kris&her",
+  "description": "Messagerie privée noir et blanc pour kris\u0026her avec style new-school et audio interactif.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
