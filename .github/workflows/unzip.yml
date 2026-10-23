@@ -1,0 +1,22 @@
+name: Dézipper le projet
+on: workflow_dispatch
+permissions:
+  contents: write
+jobs:
+  unzip:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dézipper
+        run: |
+          unzip -o Kris-her_v3-corrige-1.zip -d /tmp/v3
+          rm -rf /tmp/v3/*/.github
+          cp -r /tmp/v3/*/. .
+          git rm -q Kris-her_v3-corrige-1.zip
+      - name: Commit
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add -A
+          git commit -m "Projet dézippé"
+          git push
