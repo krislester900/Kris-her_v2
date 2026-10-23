@@ -9,10 +9,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Dézipper
         run: |
-          unzip -o Kris-her_v3-corrige-1.zip -d /tmp/v3
+          unzip -o Kris-her_v4-sans-blaze.zip -d /tmp/v3
           rm -rf /tmp/v3/*/.github
           cp -r /tmp/v3/*/. .
-          git rm -q Kris-her_v3-corrige-1.zip
+          git rm -q Kris-her_v4-sans-blaze.zip
       - name: Commit
         run: |
           git config user.name "github-actions"
