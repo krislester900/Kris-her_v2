@@ -186,6 +186,90 @@ class FirestoreChatRepository(
     }
 
     /**
+     * Prépare un média pour l'envoyer DIRECTEMENT dans le message Firestore (adresse « data: » en base64),
+     * sans Firebase Storage (donc sans plan Blaze). Plafond : [MAX_INLINE_MEDIA_BYTES] octets.
+     * Photos : réduites et recompressées automatiquement. Vocaux : ~1 min 20 max (4 Ko/s).
+     */
+    suspend fun prepareInlineMedia(
+        context: android.content.Context,
+        localUri: String,
+        type: String
+    ): Result<String> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        try {
+            val resolver = context.contentResolver
+            val sourceUri: android.net.Uri = when {
+                localUri.startsWith("content://") || localUri.startsWith("file://") -> android.net.Uri.parse(localUri)
+                else -> android.net.Uri.fromFile(java.io.File(localUri))
+            }
+            var mime = resolver.getType(sourceUri)
+                ?: when (localUri.substringAfterLast('.', "").lowercase()) {
+                    "m4a", "mp4", "aac" -> "audio/mp4"
+                    "wav" -> "audio/wav"
+                    "mp3" -> "audio/mpeg"
+                    "jpg", "jpeg" -> "image/jpeg"
+                    "png" -> "image/png"
+                    "webp" -> "image/webp"
+                    "pdf" -> "application/pdf"
+                    else -> "application/octet-stream"
+                }
+
+            val bytes: ByteArray
+            if (type == "IMAGE" || type == "STICKER") {
+                var result: ByteArray? = null
+                for (maxSide in listOf(1024, 800, 640, 480)) {
+                    val bitmap = decodeBitmapForSending(resolver, sourceUri, maxSide) ?: continue
+                    val longest = maxOf(bitmap.width, bitmap.height).toFloat()
+                    val scale = maxSide / longest
+                    val scaled = if (scale < 1f) {
+                        android.graphics.Bitmap.createScaledBitmap(
+                            bitmap,
+                            (bitmap.width * scale).toInt().coerceAtLeast(1),
+                            (bitmap.height * scale).toInt().coerceAtLeast(1),
+                            true
+                        )
+                    } else bitmap
+                    for (quality in listOf(80, 65, 50)) {
+                        val out = java.io.ByteArrayOutputStream()
+                        scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, quality, out)
+                        if (out.size() <= MAX_INLINE_MEDIA_BYTES) {
+                            result = out.toByteArray()
+                            break
+                        }
+                    }
+                    if (scaled !== bitmap) scaled.recycle()
+                    bitmap.recycle()
+                    if (result != null) break
+                }
+                bytes = result ?: throw MediaTooLargeException()
+                mime = "image/jpeg"
+            } else {
+                val raw = resolver.openInputStream(sourceUri)?.use { it.readBytes() }
+                    ?: throw java.io.IOException("Fichier illisible")
+                if (raw.size > MAX_INLINE_MEDIA_BYTES) throw MediaTooLargeException()
+                bytes = raw
+            }
+            Result.success("data:$mime;base64," + android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP))
+        } catch (e: Exception) {
+            android.util.Log.w("FirestoreChatRepository", "prepareInlineMedia warning: ${e.message}")
+            Result.failure(e)
+        }
+    }
+
+    private fun decodeBitmapForSending(
+        resolver: android.content.ContentResolver,
+        uri: android.net.Uri,
+        maxSide: Int
+    ): android.graphics.Bitmap? {
+        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        resolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, bounds) }
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        var sample = 1
+        while (bounds.outWidth / sample > maxSide * 2 || bounds.outHeight / sample > maxSide * 2) sample *= 2
+        val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+        return resolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, opts) }
+    }
+
+    /**
      * Téléverse un média local (photo, vocal, document, sticker) dans Firebase Storage
      * et renvoie son adresse de téléchargement https (lisible par l'autre personne).
      */
@@ -713,3 +797,8 @@ class FirestoreChatRepository(
         }
     }
 }
+
+/** Plafond d'un média envoyé dans un message : base64 ajoute ~33 %, on reste sous les 500 000 caractères des règles. */
+const val MAX_INLINE_MEDIA_BYTES = 340_000
+
+class MediaTooLargeException : Exception("Média trop lourd pour être envoyé dans un message")

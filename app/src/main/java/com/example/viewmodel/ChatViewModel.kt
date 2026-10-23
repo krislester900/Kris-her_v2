@@ -178,6 +178,37 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         prefs.edit().putStringSet("hidden_messages", hiddenMessages.toSet()).apply()
     }
 
+    // false = les médias sont envoyés directement dans le message (gratuit, sans plan Blaze).
+    // true  = Firebase Storage (plan Blaze requis, aucune limite de taille pratique).
+    private val useCloudStorage = false
+
+    /** Média reçu en « data: » -> fichier local (photos : file://, vocaux/docs : chemin) pour l'affichage et la lecture. */
+    private suspend fun materializeReceivedMedia(remoteId: String, type: String, mediaUri: String?): String? {
+        if (mediaUri == null || !mediaUri.startsWith("data:")) return mediaUri
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val comma = mediaUri.indexOf(',')
+                if (comma < 0) return@withContext null
+                val header = mediaUri.substring(5, comma)
+                val bytes = android.util.Base64.decode(mediaUri.substring(comma + 1), android.util.Base64.DEFAULT)
+                val ext = when {
+                    header.startsWith("image/png") -> "png"
+                    header.startsWith("image/") -> "jpg"
+                    header.startsWith("audio/") -> "m4a"
+                    header.contains("pdf") -> "pdf"
+                    else -> "bin"
+                }
+                val dir = java.io.File(getApplication<Application>().filesDir, "received_media").apply { mkdirs() }
+                val file = java.io.File(dir, "$remoteId.$ext")
+                if (!file.exists()) file.writeBytes(bytes)
+                if (type == "IMAGE" || type == "STICKER") "file://" + file.absolutePath else file.absolutePath
+            } catch (e: Exception) {
+                android.util.Log.w("ChatViewModel", "materializeReceivedMedia warning: ${e.message}")
+                null
+            }
+        }
+    }
+
     private fun isPortableMedia(uri: String?): Boolean =
         uri.isNullOrBlank() || uri.startsWith("preset://") || uri.startsWith("data:") ||
             uri.startsWith("http://") || uri.startsWith("https://")
@@ -526,7 +557,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         content = doc.content,
                         type = try { MessageType.valueOf(doc.type) } catch (_: Exception) { MessageType.TEXT },
                         audioDurationSec = doc.audioDurationSec.toInt(),
-                        mediaUri = doc.mediaUri,
+                        mediaUri = materializeReceivedMedia(doc.id, doc.type, doc.mediaUri),
                         timestamp = ts,
                         sentTimestamp = ts,
                         deliveredTimestamp = null,
@@ -758,18 +789,28 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     ?: currentUser.displayName?.takeIf { it.isNotBlank() }
                     ?: "Moi"
 
-                // 1) Média local -> adresse https (Firebase Storage)
+                // 1) Média local -> directement dans le message (gratuit) ou adresse https (Firebase Storage)
                 var remoteMediaUri: String? = mediaUri?.takeIf { isPortableMedia(it) }
                 var uploadFailed = false
+                var uploadError: Throwable? = null
                 if (mediaNeedsUpload && mediaUri != null) {
-                    val upload = firestoreRepository.uploadChatMedia(
-                        context = getApplication<Application>(),
-                        chatId = chatId,
-                        messageId = remoteId,
-                        localUri = mediaUri,
-                        type = type.name
-                    )
-                    remoteMediaUri = upload.getOrNull()
+                    val prepared = if (useCloudStorage) {
+                        firestoreRepository.uploadChatMedia(
+                            context = getApplication<Application>(),
+                            chatId = chatId,
+                            messageId = remoteId,
+                            localUri = mediaUri,
+                            type = type.name
+                        )
+                    } else {
+                        firestoreRepository.prepareInlineMedia(
+                            context = getApplication<Application>(),
+                            localUri = mediaUri,
+                            type = type.name
+                        )
+                    }
+                    remoteMediaUri = prepared.getOrNull()
+                    uploadError = prepared.exceptionOrNull()
                     uploadFailed = remoteMediaUri == null
                 }
 
@@ -791,7 +832,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                             conversationId = convId,
                             senderId = "system",
                             senderName = "kris&her",
-                            content = if (uploadFailed) {
+                            content = if (uploadFailed && uploadError is com.example.data.MediaTooLargeException) {
+                                "Fichier trop lourd pour être envoyé (environ 330 Ko max). Les notes vocales sont limitées à environ 1 min 20."
+                            } else if (uploadFailed) {
                                 "Le fichier n'a pas pu être envoyé. Vérifiez votre connexion et réessayez."
                             } else {
                                 "Message non envoyé. Vérifiez votre connexion et réessayez."

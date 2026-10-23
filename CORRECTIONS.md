@@ -22,12 +22,15 @@ Maintenant :
 Les messages sont stockés en clair dans Firestore (connexion HTTPS + chiffrement serveur Google, rien de plus).
 Tous les textes « chiffré de bout en bout / E2EE / Zero-Knowledge / chiffrement matériel » ont été remplacés par des formulations exactes.
 
-## 4. Médias réellement envoyés (Firebase Storage)
-- Photos, documents, notes vocales et stickers personnalisés sont téléversés dans `chats/{chatId}/media/{messageId}` puis envoyés sous forme d'adresse https.
-- Les photos sont réduites (1600 px max, JPEG 80 %). Les notes vocales reçues sont téléchargées en cache puis lues.
-- Si le téléversement échoue, le message est retiré et un message système l'indique (plus d'échec silencieux).
-- `storage.rules` : seuls les deux membres téléversent, 25 Mo max, pas de modification ni de suppression.
-- Limite : la lecture se fait par l'adresse de téléchargement (jeton secret), pas par authentification.
+## 4. Médias réellement envoyés — SANS plan Blaze (mode par défaut)
+- Photos et notes vocales sont envoyés DIRECTEMENT dans le message Firestore (gratuit, Firebase Storage n'est pas nécessaire).
+- Photos : réduites et recompressées automatiquement (jusqu'à 1024 px, JPEG) pour tenir sous ~330 Ko.
+- Notes vocales : enregistrées en 16 kHz / 32 kbps (~4 Ko par seconde) => environ 1 min 20 maximum. Au-delà, un message système explique que le fichier est trop lourd.
+- À la réception, le média est sauvegardé dans le téléphone (dossier privé de l'app) puis affiché ou lu normalement.
+- Si l'envoi échoue, le message est retiré et un message système l'indique (plus d'échec silencieux).
+- Limites : pas de gros fichiers ; l'historique d'une discussion est rechargé en entier à la première ouverture (les médias comptent dans le quota Firestore gratuit : 1 Go stocké, 10 Go/mois de téléchargement).
+- Le bouton « Document » de l'app envoie seulement un texte factice (« Document kris&her.pdf ») : ce n'est pas un vrai fichier (non modifié).
+- Plus tard, avec le plan Blaze : mettre `useCloudStorage = true` dans `ChatViewModel.kt` pour passer par Firebase Storage (déjà codé, règles dans `storage.rules`).
 
 ## 5. Code PIN réel
 - Fini le code `1234`, le bouton « déverrouiller avec clé secrète » (qui tapait le code à votre place) et la fausse « clé de récupération ».
@@ -44,7 +47,7 @@ Tous les textes « chiffré de bout en bout / E2EE / Zero-Knowledge / chiffremen
 - Les anciens profils sont migrés automatiquement au lancement (numéro public supprimé).
 - Honnêteté : l'empreinte d'un numéro à 8 chiffres peut être retrouvée par force brute ; cela évite l'exposition directe, pas une attaque déterminée.
 
-## 7. Notifications quand l'app est fermée
+## 7. Notifications quand l'app est fermée (NÉCESSITE le plan Blaze)
 - `FcmService` (Android) + `functions/index.js` (fonction `notifyNewMessage`, déclenchée à chaque nouveau message).
 - Le jeton de l'appareil est stocké dans `users/{uid}/private/push` (lisible seulement par son propriétaire et par le serveur).
 - Demande de la permission « notifications » (Android 13+) au lancement ; pas de notification quand l'app est au premier plan.
@@ -58,11 +61,11 @@ Tous les textes « chiffré de bout en bout / E2EE / Zero-Knowledge / chiffremen
 - `users` : plus de numéro en clair ; sous-collection `private` réservée au propriétaire.
 - `mail` : non lisible par les clients ; on ne peut s'envoyer un e-mail qu'à soi-même.
 
-## Déploiement (dans l'ordre)
-1. Console Firebase : activer **Cloud Storage** (le plan Blaze peut être exigé), puis re-télécharger `google-services.json` (il doit contenir `storage_bucket`).
-2. `firebase deploy --only firestore:rules,firestore:indexes,storage`
-3. Android Studio : Sync Gradle (nouvelles dépendances `firebase-storage` et `firebase-messaging`), puis relancer l'app.
-4. Notifications serveur (optionnel, plan Blaze) : dans `functions/index.js`, régler `REGION` sur la région de votre base Firestore, puis `cd functions && npm install && firebase deploy --only functions`.
+## Déploiement SANS Blaze (dans l'ordre)
+1. Console Firebase > Firestore > onglet Sécurité : coller `firestore.rules` et Publier.
+2. Firestore > onglet Index > Composite : collection `messages`, champs `senderId` (croissant) puis `createdAt` (croissant), portée Collection.
+3. Android Studio / build : Sync Gradle, puis lancer l'app.
+Rien d'autre : Storage et les notifications serveur sont facultatifs et exigent Blaze.
 
 ## Ce qui reste hors de portée
 - Le chiffrement de bout en bout n'existe toujours pas : les messages sont lisibles par Firebase/Google. Pour en avoir un vrai, il faut un protocole de clés (ex. Signal) : c'est un projet à part.

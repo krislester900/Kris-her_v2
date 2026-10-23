@@ -53,8 +53,9 @@ class VoiceAudioManager(private val context: Context) {
                 setAudioSource(MediaRecorder.AudioSource.MIC)
                 setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
                 setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-                setAudioSamplingRate(44100)
-                setAudioEncodingBitRate(96000)
+                // Voix seulement : 16 kHz / 32 kbps (~4 Ko par seconde) pour pouvoir envoyer la note dans un message
+                setAudioSamplingRate(16000)
+                setAudioEncodingBitRate(32000)
                 setOutputFile(currentRecordingFile!!.absolutePath)
                 prepare()
                 start()
