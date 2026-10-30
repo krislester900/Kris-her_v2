@@ -1,0 +1,100 @@
+{
+  "project_info": {
+    "project_number": "747220751087",
+    "project_id": "gen-lang-client-0758697111",
+    "storage_bucket": "gen-lang-client-0758697111.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:747220751087:android:99231e5b9a76f152f8811a",
+        "android_client_info": {
+          "package_name": "com.aistudio.entechat.ccdmum"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "747220751087-1jp8uq1bn503r9ae83gi1pcual2prdk2.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.aistudio.entechat.ccdmum",
+            "certificate_hash": "016d3bd03d24824955fc7de79966d054266d7cfb"
+          }
+        },
+        {
+          "client_id": "747220751087-qcp9bu5soqokiaa6l6ctilop4qd6m24f.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDP7nHcIMk6W843rd7WJtS3hPgLZ_UZjEc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "747220751087-qcp9bu5soqokiaa6l6ctilop4qd6m24f.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:747220751087:android:99d9ee0a29804b51f8811a",
+        "android_client_info": {
+          "package_name": "com.aistudio.entechat.gchaor"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "747220751087-27u63334nn1ntnoobpgt04ruh4al39u6.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.aistudio.entechat.gchaor",
+            "certificate_hash": "79f58d85b66458d011e0c7c12012a451ada2074d"
+          }
+        },
+        {
+          "client_id": "747220751087-af61c44rb29gsqfmg886unq05j3g5b56.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.aistudio.entechat.gchaor",
+            "certificate_hash": "2318de035b80c3f21c4dc66c561e56ae5958cb72"
+          }
+        },
+        {
+          "client_id": "747220751087-eoebjjd077d3k8epn2l6mdastm0odmma.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.aistudio.entechat.gchaor",
+            "certificate_hash": "9adc07d785f37d540e9bf9b77704bd9483ff2be9"
+          }
+        },
+        {
+          "client_id": "747220751087-qcp9bu5soqokiaa6l6ctilop4qd6m24f.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDP7nHcIMk6W843rd7WJtS3hPgLZ_UZjEc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "747220751087-qcp9bu5soqokiaa6l6ctilop4qd6m24f.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
