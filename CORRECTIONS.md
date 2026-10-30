@@ -70,3 +70,10 @@ Rien d'autre : Storage et les notifications serveur sont facultatifs et exigent 
 ## Ce qui reste hors de portée
 - Le chiffrement de bout en bout n'existe toujours pas : les messages sont lisibles par Firebase/Google. Pour en avoir un vrai, il faut un protocole de clés (ex. Signal) : c'est un projet à part.
 - Rien n'a pu être compilé ni exécuté dans cet environnement : syntaxe Kotlin et JS vérifiée seulement. Les tests (`firestore.test.js`, `ChatRepositoryRuleTest.kt`) sont adaptés mais non lancés. Faites un build et un test à deux téléphones avant de publier.
+
+## Build de l'APK sur GitHub
+- `debug.keystore` (le vôtre, celui du premier APK) est maintenant à la racine : l'APK est toujours signé avec la même clé.
+  Empreinte SHA-1 : C6:F7:2C:0E:F0:C4:E5:9F:10:A4:D6:19:7A:4E:90:31:34:D0:49:80
+- Package de l'app (à déclarer dans Firebase) : com.aistudio.entechat.gchaor
+- `app/google-services.json` (téléchargé dans la console Firebase) doit être ajouté dans le dépôt ; il ne change pas quand on modifie les règles Firestore.
+- Le dossier `.github/workflows` contient le workflow « Build APK » (à créer à la main sur GitHub si le robot de dézippage ne l'a pas copié).
