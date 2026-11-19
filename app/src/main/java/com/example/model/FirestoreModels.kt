@@ -28,8 +28,11 @@ data class Conversation(
     val unreadCount: Long = 0L,
     val isPinned: Boolean = false,
     val isFavorite: Boolean = false,
-    val safetyFingerprint: String = "4A8F • 91B2 • C401 • 77DE",
-    val isOnline: Boolean = true,
+    // Aucun safety number n'est généré par défaut : il doit être calculé
+    // à partir des clés cryptographiques des deux interlocuteurs (protocole Signal-like).
+    val safetyFingerprint: String = "",
+    // Pas de présence en temps réel implémentée : la valeur par défaut est false.
+    val isOnline: Boolean = false,
     val statusText: String = "Messagerie privée",
     val createdAt: Timestamp? = null,
     val updatedAt: Timestamp? = null
