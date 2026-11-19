@@ -64,6 +64,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val firestoreRepository = FirestoreChatRepository(application)
     private val audioManagerViewModel = AudioManagerViewModel(application)
     private val stickerViewModel = StickerViewModel(application, firestoreRepository)
+    private val notificationViewModel = NotificationViewModel(application, firestoreRepository)
 
     val audioPlaybackState: StateFlow<AudioPlaybackState> = audioManagerViewModel.audioPlaybackState
     val isSoundEffectsEnabled: StateFlow<Boolean> = audioManagerViewModel.isSoundEffectsEnabled
@@ -82,7 +83,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     val userProfile = MutableStateFlow<UserProfile?>(null)
     val isSavingProfile = MutableStateFlow(false)
     val profileSaveMessage = MutableStateFlow<String?>(null)
-    val accountCreationBanner = MutableStateFlow<String?>(null)
+    val accountCreationBanner: StateFlow<String?> = notificationViewModel.accountCreationBanner
 
     /**
      * Erreur globale à afficher à l'utilisateur (Snackbar, bannière, dialogue).
@@ -103,7 +104,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun dismissAccountCreationBanner() {
-        accountCreationBanner.value = null
+        notificationViewModel.dismissAccountCreationBanner()
     }
 
     val customStickers: StateFlow<List<CustomStickerItem>> = stickerViewModel.customStickers
@@ -604,30 +605,14 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
             // 1. Send official account confirmation email directly to the Google account mailbox (Gmail)
             //    L'email n'est envoyé que si l'utilisateur est connecté avec un compte Google.
+            // 1. Send official account confirmation email (delegated to NotificationViewModel)
             if (googleEmail.isNotBlank()) {
-                    try {
-                        com.example.util.AccountEmailService.dispatchAccountCreationEmail(
-                            email = googleEmail,
-                            displayName = cleanName,
-                            phoneNumber = cleanPhone,
-                            firestore = firestoreRepository.getFirestore()
-                        )
-                        android.util.Log.i("ChatViewModel", "Email officiel expédié dans la boîte mail Google : $googleEmail")
-                    } catch (e: Exception) {
-                        android.util.Log.w("ChatViewModel", "Erreur envoi email boîte mail: ${e.message}")
-                    }
-                }
-
-                // 2. Post Android system status bar notification
-                try {
-                    com.example.util.NotificationHelper.showAccountCreatedNotification(getApplication(), googleEmail)
-                } catch (e: Exception) {
-                    android.util.Log.w("ChatViewModel", "Notification error: ${e.message}")
-                }
-
-                // 3. Set celebratory in-app banner confirming email dispatched to mailbox
-                accountCreationBanner.value = "Un message de confirmation a été envoyé dans la boîte mail de votre compte Google ($googleEmail) !"
-
+                notificationViewModel.sendAccountCreationEmail(
+                    email = googleEmail,
+                    displayName = cleanName,
+                    phoneNumber = cleanPhone
+                )
+            }
             // 4. Insert confirmation message to inbox so user has immediate proof on the account
             try {
                 val googleSecurityConv = repository.findConversationByTitle("Bienvenue sur kris&her")
