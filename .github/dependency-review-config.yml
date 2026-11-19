@@ -1,0 +1,14 @@
+# Configuration pour dependency-review-action
+# Voir https://github.com/actions/dependency-review-action
+
+# Ignorer certains avertissements connus
+allow-ghsas:
+  - GHSA-xvrc-5cqv-6gv2  # Exemple: vulnerability connue acceptée
+
+# Configuration des licences interdites
+disallowed-licenses:
+  - GPL-3.0-only
+  - AGPL-3.0-only
+
+# Séverité minimale pour échouer
+fail-on-severity: high
