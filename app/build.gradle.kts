@@ -41,7 +41,9 @@ android {
   buildTypes {
     release {
       isCrunchPngs = false
-      isMinifyEnabled = false
+      isMinifyEnabled = true
+      // ⚠️ Si l'app crash à l'exécution en release (réflexion Firebase/Moshi/Room),
+      // ajouter des règles -keep dans app/proguard-rules.pro.
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       signingConfig = signingConfigs.getByName("release")
     }
