@@ -3,9 +3,6 @@ package com.example.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.audio.AudioPlaybackState
-import com.example.audio.NewSchoolSoundEffectManager
-import com.example.audio.VoiceAudioManager
 import com.example.data.AppDatabase
 import com.example.data.ChatRepository
 import com.example.data.FirestoreChatRepository
@@ -20,6 +17,7 @@ import com.example.model.StatusStory
 import com.example.model.UserProfile
 import com.example.security.VaultSecurityManager
 import com.example.ui.components.BubbleStyle
+import com.example.viewmodel.AudioManagerViewModel
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
 import kotlinx.coroutines.Job
@@ -64,11 +62,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase.getDatabase(application)
     private val repository = ChatRepository(database.conversationDao(), database.messageDao())
     private val firestoreRepository = FirestoreChatRepository(application)
-    val voiceAudioManager = VoiceAudioManager(application)
-    val soundEffectManager = NewSchoolSoundEffectManager(application)
+    private val audioManagerViewModel = AudioManagerViewModel(application)
 
-    val audioPlaybackState: StateFlow<AudioPlaybackState> = voiceAudioManager.playbackState
-    val isSoundEffectsEnabled: StateFlow<Boolean> = soundEffectManager.isSoundEnabled
+    val audioPlaybackState: StateFlow<AudioPlaybackState> = audioManagerViewModel.audioPlaybackState
+    val isSoundEffectsEnabled: StateFlow<Boolean> = audioManagerViewModel.isSoundEffectsEnabled
 
     // Chat Bubbles Style & State
     val bubbleStyle = MutableStateFlow(BubbleStyle.COMIC)
@@ -452,7 +449,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         // A new message has arrived in the active conversation
                         lastTrackedMessageId = last.id
                         if (last.senderId != "me" && last.type != MessageType.SYSTEM) {
-                            soundEffectManager.playReceivedSound()
+                            audioManagerViewModel.playReceivedSoundEffect()
                         }
                     }
                 }
@@ -620,7 +617,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun closeConversation() {
-        voiceAudioManager.stopAudio()
+        audioManagerViewModel.stopAudio()
         currentConversationId.value = null
     }
 
@@ -796,7 +793,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             !isPortableMedia(mediaUri)
 
         // Play New-School comic sound effect when message is sent
-        soundEffectManager.playSentSound()
+        audioManagerViewModel.playSentSoundEffect()
 
         viewModelScope.launch {
             val remoteId = if (isRemoteChat) UUID.randomUUID().toString() else ""
@@ -882,75 +879,31 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun startAudioRecording() {
-        voiceAudioManager.stopAudio()
-        voiceAudioManager.startRecording()
-        isRecordingAudio.value = true
-        isRecordingPaused.value = false
-        recordingDurationSec.value = 0
-        recordingAmplitudes.value = emptyList()
-        recordTimerJob?.cancel()
-        recordTimerJob = viewModelScope.launch {
-            var tickCount = 0
-            while (isRecordingAudio.value) {
-                delay(100)
-                if (!isRecordingPaused.value) {
-                    val amp = voiceAudioManager.getLiveAmplitude()
-                    val currentList = recordingAmplitudes.value.toMutableList()
-                    currentList.add(amp)
-                    if (currentList.size > 28) currentList.removeAt(0)
-                    recordingAmplitudes.value = currentList
-
-                    tickCount++
-                    if (tickCount % 10 == 0) {
-                        recordingDurationSec.value += 1
-                    }
-                }
-            }
-        }
+        audioManagerViewModel.startAudioRecording()
     }
 
     fun togglePauseRecording() {
-        if (!isRecordingAudio.value) return
-        if (isRecordingPaused.value) {
-            voiceAudioManager.resumeRecording()
-            isRecordingPaused.value = false
-        } else {
-            voiceAudioManager.pauseRecording()
-            isRecordingPaused.value = true
-        }
+        audioManagerViewModel.togglePauseRecording()
     }
 
     fun stopAndSendAudioRecording() {
-        val timerDuration = recordingDurationSec.value
-        recordTimerJob?.cancel()
-        isRecordingAudio.value = false
-        isRecordingPaused.value = false
-        val (filePath, fileDuration) = voiceAudioManager.stopRecording()
-        val finalDuration = if (fileDuration > 0) fileDuration else timerDuration.coerceAtLeast(1)
-
-        if (finalDuration >= 1) {
+        val (filePath, durationSec) = audioManagerViewModel.stopRecording()
+        if (durationSec >= 1) {
             sendMessage(
-                content = "🎤 Note vocale (${formatSeconds(finalDuration)})",
+                content = "🎤 Note vocale (${formatSeconds(durationSec)})",
                 type = MessageType.AUDIO,
-                audioDuration = finalDuration,
+                audioDuration = durationSec,
                 mediaUri = filePath
             )
         }
-        recordingDurationSec.value = 0
-        recordingAmplitudes.value = emptyList()
     }
 
     fun cancelAudioRecording() {
-        voiceAudioManager.cancelRecording()
-        recordTimerJob?.cancel()
-        isRecordingAudio.value = false
-        isRecordingPaused.value = false
-        recordingDurationSec.value = 0
-        recordingAmplitudes.value = emptyList()
+        audioManagerViewModel.cancelAudioRecording()
     }
 
     fun playAudio(messageId: Long, mediaUri: String?, durationSec: Int) {
-        voiceAudioManager.playAudio(messageId, mediaUri, durationSec)
+        audioManagerViewModel.playAudio(messageId, mediaUri, durationSec)
     }
 
     fun togglePinConversation(id: Long) {
@@ -1198,15 +1151,15 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun toggleSoundEffects() {
-        soundEffectManager.toggleSound()
+        audioManagerViewModel.toggleSoundEffects()
     }
 
     fun playSentSoundEffect() {
-        soundEffectManager.playSentSound()
+        audioManagerViewModel.playSentSoundEffect()
     }
 
     fun playReceivedSoundEffect() {
-        soundEffectManager.playReceivedSound()
+        audioManagerViewModel.playReceivedSoundEffect()
     }
 
     fun saveUserProfile(
@@ -1276,8 +1229,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() {
         super.onCleared()
-        voiceAudioManager.stopAudio()
-        soundEffectManager.release()
+        audioManagerViewModel.stopAudio()
+        audioManagerViewModel.release()
     }
 
     private fun formatSeconds(sec: Int): String {
