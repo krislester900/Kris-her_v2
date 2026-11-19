@@ -18,6 +18,7 @@ import com.example.model.MessageStatus
 import com.example.model.MessageType
 import com.example.model.StatusStory
 import com.example.model.UserProfile
+import com.example.security.VaultSecurityManager
 import com.example.ui.components.BubbleStyle
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
@@ -268,13 +269,13 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     val recordingAmplitudes = MutableStateFlow<List<Float>>(emptyList())
     private var recordTimerJob: Job? = null
 
-    // App Lock & Vault Security state
-    val hasPin = MutableStateFlow(prefs.contains("vault_pin_hash"))
-    val isPinProtectionEnabled = MutableStateFlow(prefs.getBoolean("vault_pin_enabled", false) && prefs.contains("vault_pin_hash"))
-    // Verrouillé dès le lancement si le code PIN est activé
-    val isAppLocked = MutableStateFlow(isPinProtectionEnabled.value)
-    val enteredPin = MutableStateFlow("")
-    val pinError = MutableStateFlow(false)
+    // App Lock & Vault Security — délégué à VaultSecurityManager (extrait P1-3)
+    private val vaultSecurityManager = VaultSecurityManager.create(application, viewModelScope)
+    val hasPin: StateFlow<Boolean> = vaultSecurityManager.hasPin
+    val isPinProtectionEnabled: StateFlow<Boolean> = vaultSecurityManager.isPinProtectionEnabled
+    val isAppLocked: StateFlow<Boolean> = vaultSecurityManager.isAppLocked
+    val enteredPin: StateFlow<String> = vaultSecurityManager.enteredPin
+    val pinError: StateFlow<Boolean> = vaultSecurityManager.pinError
 
     // Theme mode (Monochrome Black & White)
     val themeMode = MutableStateFlow(ThemeMode.DARK)
@@ -1125,95 +1126,27 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         activeCall.value = null
     }
 
-    // PIN vault security actions
-    private fun hashPin(pin: String, salt: ByteArray): ByteArray {
-        val spec = javax.crypto.spec.PBEKeySpec(pin.toCharArray(), salt, 60_000, 256)
-        return javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(spec).encoded
-    }
+    // PIN vault security actions — déléguées à VaultSecurityManager (extrait P1-3)
 
-    private fun verifyPin(pin: String): Boolean {
-        val saltB64 = prefs.getString("vault_pin_salt", null) ?: return false
-        val hashB64 = prefs.getString("vault_pin_hash", null) ?: return false
-        val salt = android.util.Base64.decode(saltB64, android.util.Base64.NO_WRAP)
-        val expected = android.util.Base64.decode(hashB64, android.util.Base64.NO_WRAP)
-        return java.security.MessageDigest.isEqual(expected, hashPin(pin, salt))
-    }
-
-    /** Définit (ou change) le code PIN à 4 chiffres choisi par l'utilisateur ; il est stocké salé et haché. */
+    /**
+     * Définit (ou change) le code PIN à 4 chiffres choisi par l'utilisateur.
+     * Le hachage est effectué hors du thread principal par VaultSecurityManager.
+     *
+     * @return true si le format du PIN est valide (l'enregistrement est asynchrone).
+     */
     fun setPin(pin: String): Boolean {
         if (pin.length != 4 || !pin.all { it.isDigit() }) return false
-        val salt = ByteArray(16).also { java.security.SecureRandom().nextBytes(it) }
-        prefs.edit()
-            .putString("vault_pin_salt", android.util.Base64.encodeToString(salt, android.util.Base64.NO_WRAP))
-            .putString("vault_pin_hash", android.util.Base64.encodeToString(hashPin(pin, salt), android.util.Base64.NO_WRAP))
-            .putBoolean("vault_pin_enabled", true)
-            .putInt("vault_failed_attempts", 0)
-            .putLong("vault_lock_until", 0L)
-            .apply()
-        hasPin.value = true
-        isPinProtectionEnabled.value = true
+        vaultSecurityManager.setPin(pin)
         return true
     }
 
-    fun appendPinDigit(digit: String) {
-        val now = System.currentTimeMillis()
-        // Blocage temporaire après trop d'essais ratés
-        if (now < prefs.getLong("vault_lock_until", 0L)) {
-            pinError.value = true
-            return
-        }
-        if (digit.length != 1 || !digit[0].isDigit()) return
-        if (enteredPin.value.length < 4) {
-            enteredPin.value += digit
-            pinError.value = false
-            if (enteredPin.value.length == 4) {
-                val attempt = enteredPin.value
-                viewModelScope.launch {
-                    val ok = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { verifyPin(attempt) }
-                    if (ok) {
-                        prefs.edit().putInt("vault_failed_attempts", 0).putLong("vault_lock_until", 0L).apply()
-                        isAppLocked.value = false
-                        enteredPin.value = ""
-                    } else {
-                        val failed = prefs.getInt("vault_failed_attempts", 0) + 1
-                        // À partir du 5e échec : 30 s, 60 s, 2 min, 4 min, 8 min...
-                        val lockMs = if (failed >= 5) 30_000L * (1L shl minOf(failed - 5, 4)) else 0L
-                        prefs.edit()
-                            .putInt("vault_failed_attempts", failed)
-                            .putLong("vault_lock_until", if (lockMs > 0) System.currentTimeMillis() + lockMs else 0L)
-                            .apply()
-                        pinError.value = true
-                        delay(600)
-                        enteredPin.value = ""
-                    }
-                }
-            }
-        }
-    }
+    fun appendPinDigit(digit: String) = vaultSecurityManager.appendPinDigit(digit)
 
-    fun deletePinDigit() {
-        if (enteredPin.value.isNotEmpty()) {
-            enteredPin.value = enteredPin.value.dropLast(1)
-            pinError.value = false
-        }
-    }
+    fun deletePinDigit() = vaultSecurityManager.deletePinDigit()
 
-    fun togglePinProtection(enabled: Boolean) {
-        // Sans code choisi, l'écran demande d'abord d'en définir un (setPin)
-        if (enabled && !hasPin.value) return
-        isPinProtectionEnabled.value = enabled
-        prefs.edit().putBoolean("vault_pin_enabled", enabled).apply()
-        if (!enabled) {
-            isAppLocked.value = false
-        }
-    }
+    fun togglePinProtection(enabled: Boolean) = vaultSecurityManager.togglePinProtection(enabled)
 
-    fun lockVaultNow() {
-        if (isPinProtectionEnabled.value) {
-            enteredPin.value = ""
-            isAppLocked.value = true
-        }
-    }
+    fun lockVaultNow() = vaultSecurityManager.lockVaultNow()
 
     fun postNewStatus(caption: String, emoji: String) {
         val newStory = StatusStory(
