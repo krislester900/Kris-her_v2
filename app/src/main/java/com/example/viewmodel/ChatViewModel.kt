@@ -255,7 +255,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         val savedPhoto = prefs.getString("profile_photo_url", "")
         if (!savedName.isNullOrBlank()) {
             userProfile.value = UserProfile(
-                userId = runCatching { Firebase.auth.currentUser?.uid }.getOrNull() ?: "kris_local_user",
+                userId = runCatching { Firebase.auth.currentUser?.uid }.getOrNull() ?: "local_user_" + System.currentTimeMillis(),
                 displayName = savedName,
                 phoneNumber = savedPhone ?: "",
                 photoUrl = savedPhoto ?: "",
@@ -561,7 +561,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         phoneNumber: String,
         photoUrl: String
     ) {
-        val uid = runCatching { Firebase.auth.currentUser?.uid }.getOrNull() ?: "kris_local_user"
+        val uid = runCatching { Firebase.auth.currentUser?.uid }.getOrNull() ?: "local_user_" + System.currentTimeMillis()
         val cleanName = displayName.trim().ifBlank { "Kris" }
         val cleanPhone = phoneNumber.trim()
 
