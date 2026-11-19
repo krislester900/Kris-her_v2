@@ -13,7 +13,12 @@ import java.net.URL
 
 object AccountEmailService {
     private const val TAG = "AccountEmailService"
-    private const val API_KEY = "AIzaSyDP7nHcIMk6W843rd7WJtS3hPgLZ_UZjEc"
+    /**
+     * Clé API Google Identity Toolkit.
+     * NE JAMAIS coder en dur dans le fichier source : lire depuis une variable d'environnement
+     * ou une propriété Gradle (secrets plugin) au moment de la build.
+     */
+    private val API_KEY: String? = System.getenv("IDENTITY_TOOLKIT_API_KEY")
 
     /**
      * Sends an official account confirmation email directly to the user's Google mailbox (Gmail).
@@ -28,8 +33,12 @@ object AccountEmailService {
         var emailSent = false
 
         // Method 1: Google Identity Toolkit sendOobCode (delivers directly to Gmail mailbox)
+        val apiKey = API_KEY ?: run {
+            Log.w(TAG, "IDENTITY_TOOLKIT_API_KEY non configurée : envoi d'email impossible")
+            return@withContext false
+        }
         try {
-            val endpointUrl = URL("https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=$API_KEY")
+            val endpointUrl = URL("https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=$apiKey")
             val conn = endpointUrl.openConnection() as HttpURLConnection
             conn.requestMethod = "POST"
             conn.setRequestProperty("Content-Type", "application/json")
