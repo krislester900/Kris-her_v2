@@ -7,6 +7,8 @@ import com.example.data.AppDatabase
 import com.example.data.ChatRepository
 import com.example.data.FirestoreChatRepository
 import com.example.data.PresenceManager
+import com.example.viewmodel.NotificationViewModel
+import com.example.viewmodel.StickerViewModel
 import com.example.model.Chat
 import com.example.model.ChatMessagesSnapshot
 import com.example.model.ConversationEntity
@@ -246,8 +248,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     val ephemeralTimerHours = MutableStateFlow(24)
 
     // Active call simulation
-    val activeCall = MutableStateFlow<ActiveCallState?>(null)
-    private var callTimerJob: Job? = null
+    // val activeCall = MutableStateFlow<ActiveCallState?>(null)
+    // private var callTimerJob: Job? = null
 
     // Empty list of stories (no demo data)
     val stories = MutableStateFlow<List<StatusStory>>(emptyList())
@@ -994,39 +996,6 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // Call Actions
-    fun startCall(isVideo: Boolean) {
-        val conv = activeConversation.value ?: return
-        callTimerJob?.cancel()
-        activeCall.value = ActiveCallState(
-            conversationTitle = conv.title,
-            avatarInitials = conv.avatarInitials,
-            avatarColorHex = conv.avatarColorHex,
-            isVideo = isVideo,
-            durationSeconds = 0
-        )
-        callTimerJob = viewModelScope.launch {
-            while (activeCall.value != null) {
-                delay(1000)
-                activeCall.value = activeCall.value?.copy(
-                    durationSeconds = (activeCall.value?.durationSeconds ?: 0) + 1
-                )
-            }
-        }
-    }
-
-    fun toggleCallMute() {
-        activeCall.value = activeCall.value?.copy(isMuted = !(activeCall.value?.isMuted ?: false))
-    }
-
-    fun toggleCallSpeaker() {
-        activeCall.value = activeCall.value?.copy(isSpeaker = !(activeCall.value?.isSpeaker ?: false))
-    }
-
-    fun endCall() {
-        callTimerJob?.cancel()
-        activeCall.value = null
-    }
-
     // PIN vault security actions — déléguées à VaultSecurityManager (extrait P1-3)
 
     /**

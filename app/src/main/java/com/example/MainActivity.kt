@@ -334,7 +334,6 @@ fun KrisAndHerApp(viewModel: ChatViewModel) {
                     onPlayAudio = { msgId, mediaUri, duration ->
                         viewModel.playAudio(msgId, mediaUri, duration)
                     },
-                    onStartCall = { isVideo -> viewModel.startCall(isVideo) },
                     onAddReaction = { msgId, emoji -> viewModel.addReaction(msgId, emoji) },
                     onDeleteMessage = { msgId -> viewModel.deleteMessage(msgId) },
                     customStickers = customStickers,
