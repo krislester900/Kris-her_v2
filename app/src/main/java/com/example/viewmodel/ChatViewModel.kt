@@ -685,30 +685,33 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
             val googleEmail = runCatching { Firebase.auth.currentUser?.email }.getOrNull()
                 ?: prefs.getString("google_auth_email", null)
-                ?: "krislester900@gmail.com"
+                ?: ""
 
             // 1. Send official account confirmation email directly to the Google account mailbox (Gmail)
-            try {
-                com.example.util.AccountEmailService.dispatchAccountCreationEmail(
-                    email = googleEmail,
-                    displayName = cleanName,
-                    phoneNumber = cleanPhone,
-                    firestore = firestoreRepository.getFirestore()
-                )
-                android.util.Log.i("ChatViewModel", "Email officiel expédié dans la boîte mail Google : $googleEmail")
-            } catch (e: Exception) {
-                android.util.Log.w("ChatViewModel", "Erreur envoi email boîte mail: ${e.message}")
-            }
+            //    L'email n'est envoyé que si l'utilisateur est connecté avec un compte Google.
+            if (googleEmail.isNotBlank()) {
+                    try {
+                        com.example.util.AccountEmailService.dispatchAccountCreationEmail(
+                            email = googleEmail,
+                            displayName = cleanName,
+                            phoneNumber = cleanPhone,
+                            firestore = firestoreRepository.getFirestore()
+                        )
+                        android.util.Log.i("ChatViewModel", "Email officiel expédié dans la boîte mail Google : $googleEmail")
+                    } catch (e: Exception) {
+                        android.util.Log.w("ChatViewModel", "Erreur envoi email boîte mail: ${e.message}")
+                    }
+                }
 
-            // 2. Post Android system status bar notification
-            try {
-                com.example.util.NotificationHelper.showAccountCreatedNotification(getApplication(), googleEmail)
-            } catch (e: Exception) {
-                android.util.Log.w("ChatViewModel", "Notification error: ${e.message}")
-            }
+                // 2. Post Android system status bar notification
+                try {
+                    com.example.util.NotificationHelper.showAccountCreatedNotification(getApplication(), googleEmail)
+                } catch (e: Exception) {
+                    android.util.Log.w("ChatViewModel", "Notification error: ${e.message}")
+                }
 
-            // 3. Set celebratory in-app banner confirming email dispatched to mailbox
-            accountCreationBanner.value = "Un message de confirmation a été envoyé dans la boîte mail de votre compte Google ($googleEmail) !"
+                // 3. Set celebratory in-app banner confirming email dispatched to mailbox
+                accountCreationBanner.value = "Un message de confirmation a été envoyé dans la boîte mail de votre compte Google ($googleEmail) !"
 
             // 4. Insert confirmation message to inbox so user has immediate proof on the account
             try {
