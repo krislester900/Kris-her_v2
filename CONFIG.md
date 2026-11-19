@@ -41,6 +41,44 @@ Déclarez cette empreinte dans la console Firebase pour que l'APK de debug puiss
 - Créez l'index composite `messages(senderId ASC, createdAt ASC)` (console Firebase > Firestore > Index).
 - La fonction Cloud `notifyNewMessage` nécessite le **plan Blaze** (payant) pour l'envoi de notifications FCM.
 
+## 4. Keystore de debug et de release
+
+### Debug (`debug.keystore`)
+
+Le fichier `debug.keystore` est référencé par `build.gradle.kts` pour signer les APK de debug. S'il est absent, générez-le avec le script fourni :
+
+```bash
+./scripts/generate-debug-keystore.sh
+```
+
+Ce script crée un keystore avec l'alias `androiddebugkey` et les mots de passe `android` / `android`, identique à celui d'Android Studio.
+
+### Release (`my-upload-key.jks`)
+
+Pour les builds de release, générez votre propre keystore :
+
+```bash
+keytool -genkeypair \
+  -alias upload \
+  -keyalg RSA \
+  -keysize 2048 \
+  -validity 10000 \
+  -keystore my-upload-key.jks \
+  -storepass <votre-mot-de-passe> \
+  -keypass <votre-mot-de-passe> \
+  -dname "CN=kris&her,O=kris&her,C=FR"
+```
+
+Déclarez ensuite les variables d'environnement avant le build release :
+
+```bash
+export KEYSTORE_PATH="$PWD/my-upload-key.jks"
+export STORE_PASSWORD=<votre-mot-de-passe>
+export KEY_PASSWORD=<votre-mot-de-passe>
+```
+
+`my-upload-key.jks` **ne doit jamais être commité** dans le dépôt (gitignoré).
+
 ## 5. Build de l'APK
 
 ```bash
