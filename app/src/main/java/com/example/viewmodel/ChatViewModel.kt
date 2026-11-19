@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.data.AppDatabase
 import com.example.data.ChatRepository
 import com.example.data.FirestoreChatRepository
+import com.example.data.PresenceManager
 import com.example.model.Chat
 import com.example.model.ChatMessagesSnapshot
 import com.example.model.ConversationEntity
@@ -62,6 +63,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase.getDatabase(application)
     private val repository = ChatRepository(database.conversationDao(), database.messageDao())
     private val firestoreRepository = FirestoreChatRepository(application)
+    private val presenceManager = PresenceManager(firestoreRepository.getFirestore(), viewModelScope)
     private val audioManagerViewModel = AudioManagerViewModel(application)
     private val stickerViewModel = StickerViewModel(application, firestoreRepository)
     private val notificationViewModel = NotificationViewModel(application, firestoreRepository)
@@ -73,6 +75,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     val bubbleStyle = MutableStateFlow(BubbleStyle.COMIC)
     val replyingToMessage = MutableStateFlow<MessageEntity?>(null)
     val floatingBubbleConversationId = MutableStateFlow<Long?>(null)
+    val peerOnlineStatus = MutableStateFlow<Boolean>(false)
 
     private val prefs = application.getSharedPreferences("kris_her_prefs", android.content.Context.MODE_PRIVATE)
 
@@ -532,12 +535,23 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         currentConversationId.value = id
         viewModelScope.launch {
             repository.markAsRead(id)
+            // Observer la présence du peer
+            val conv = repository.getConversationOnce(id)
+            conv?.let { conversation ->
+                if (conversation.peerUid.isNotBlank()) {
+                    presenceManager.observePresence(conversation.peerUid)
+                        .collect { isOnline ->
+                            peerOnlineStatus.value = isOnline
+                        }
+                }
+            }
         }
     }
 
     fun closeConversation() {
         audioManagerViewModel.stopAudio()
         currentConversationId.value = null
+        peerOnlineStatus.value = false
     }
 
     fun setBubbleStyle(style: BubbleStyle) {
