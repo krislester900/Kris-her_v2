@@ -86,6 +86,24 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     val profileSaveMessage = MutableStateFlow<String?>(null)
     val accountCreationBanner = MutableStateFlow<String?>(null)
 
+    /**
+     * Erreur globale à afficher à l'utilisateur (Snackbar, bannière, dialogue).
+     * Utilisé pour propager les échecs qui étaient auparavant silencieux.
+     */
+    val errorMessage = MutableStateFlow<String?>(null)
+
+    fun dismissErrorMessage() { errorMessage.value = null }
+
+    /**
+     * Enregistre une erreur à destination de l'utilisateur.
+     * Évite les doublons si le même message est déjà affiché.
+     */
+    fun reportError(message: String) {
+        if (errorMessage.value != message) {
+            errorMessage.value = message
+        }
+    }
+
     fun dismissAccountCreationBanner() {
         accountCreationBanner.value = null
     }
@@ -844,6 +862,16 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                             status = MessageStatus.READ
                         )
                     )
+                    // Remonter l'erreur à l'UI (Snackbar) en plus du message système.
+                    reportError(
+                        if (uploadFailed && uploadError is com.example.data.MediaTooLargeException) {
+                            "Fichier trop lourd pour l'envoi (330 Ko max)"
+                        } else if (uploadFailed) {
+                            "Le fichier n'a pas pu être envoyé"
+                        } else {
+                            "Message non envoyé — vérifiez votre connexion"
+                        }
+                    )
                 }
             }
             // Conversation locale sans interlocuteur inscrit : rien n'est délivré et aucune réponse n'est simulée.
@@ -1201,7 +1229,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 profileSaveMessage.value = "Profil & Numéro synchronisés avec Firestore ! ☁️"
                 onComplete?.invoke(true)
             } else {
-                profileSaveMessage.value = "Erreur: ${result.exceptionOrNull()?.message ?: "Échec"}"
+                val detail = result.exceptionOrNull()?.message ?: "Échec de la synchronisation"
+                profileSaveMessage.value = "Erreur: $detail"
+                reportError("Impossible de synchroniser le profil : $detail")
                 onComplete?.invoke(false)
             }
         }
