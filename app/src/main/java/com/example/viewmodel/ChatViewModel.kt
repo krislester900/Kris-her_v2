@@ -63,6 +63,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = ChatRepository(database.conversationDao(), database.messageDao())
     private val firestoreRepository = FirestoreChatRepository(application)
     private val audioManagerViewModel = AudioManagerViewModel(application)
+    private val stickerViewModel = StickerViewModel(application, firestoreRepository)
 
     val audioPlaybackState: StateFlow<AudioPlaybackState> = audioManagerViewModel.audioPlaybackState
     val isSoundEffectsEnabled: StateFlow<Boolean> = audioManagerViewModel.isSoundEffectsEnabled
@@ -105,65 +106,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         accountCreationBanner.value = null
     }
 
-    val customStickers = MutableStateFlow<List<CustomStickerItem>>(
-        listOf(
-            CustomStickerItem(
-                id = "stk_preset_1",
-                title = "KRIS FIRE",
-                author = "Kris",
-                imageUri = "preset://🔥",
-                emojiBadge = "🔥",
-                borderColorHex = "#FF5500",
-                isVideo = false
-            ),
-            CustomStickerItem(
-                id = "stk_preset_2",
-                title = "HER LOVE",
-                author = "Her",
-                imageUri = "preset://❤️",
-                emojiBadge = "❤️",
-                borderColorHex = "#FF2A85",
-                isVideo = false
-            ),
-            CustomStickerItem(
-                id = "stk_preset_3",
-                title = "ZAP POW",
-                author = "Kris",
-                imageUri = "preset://⚡",
-                emojiBadge = "⚡",
-                borderColorHex = "#FFD700",
-                isVideo = false
-            ),
-            CustomStickerItem(
-                id = "stk_preset_4",
-                title = "ROYAL QUEEN",
-                author = "Her",
-                imageUri = "preset://👑",
-                emojiBadge = "👑",
-                borderColorHex = "#00FF66",
-                isVideo = false
-            ),
-            CustomStickerItem(
-                id = "stk_preset_5",
-                title = "DIAMOND",
-                author = "Kris",
-                imageUri = "preset://💎",
-                emojiBadge = "💎",
-                borderColorHex = "#00F0FF",
-                isVideo = false
-            ),
-            CustomStickerItem(
-                id = "stk_preset_6",
-                title = "DEAD LOL",
-                author = "Her",
-                imageUri = "preset://💀",
-                emojiBadge = "💀",
-                borderColorHex = "#B026FF",
-                isVideo = false
-            )
-        )
-    )
-
+    val customStickers: StateFlow<List<CustomStickerItem>> = stickerViewModel.customStickers
     private var lastTrackedConversationId: Long? = null
     private var lastTrackedMessageId: Long? = null
 
@@ -374,32 +317,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         android.util.Log.e("ChatViewModel", "observeChats warning: ${e.message}")
                     }
                 }
-                launch {
-                    try {
-                        firestoreRepository.observeCustomStickers().collect { firestoreStickers ->
-                            if (firestoreStickers.isNotEmpty()) {
-                                val items = firestoreStickers.map { doc ->
-                                    CustomStickerItem(
-                                        id = doc.id,
-                                        title = doc.title,
-                                        author = doc.author,
-                                        imageUri = doc.imageUri,
-                                        emojiBadge = doc.emojiBadge,
-                                        borderColorHex = doc.borderColorHex,
-                                        isVideo = doc.isVideo,
-                                        frameTimestampMs = doc.frameTimestampMs,
-                                        createdAt = doc.createdAt?.toDate()?.time ?: System.currentTimeMillis()
-                                    )
-                                }
-                                val existingIds = items.map { it.id }.toSet()
-                                val presets = customStickers.value.filter { it.id !in existingIds }
-                                customStickers.value = items + presets
-                            }
-                        }
-                    } catch (e: Exception) {
-                        android.util.Log.e("ChatViewModel", "observeCustomStickers warning: ${e.message}")
-                    }
-                }
+                stickerViewModel.initStickers()
             }
         }
 
@@ -1203,28 +1121,11 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun saveCustomSticker(item: CustomStickerItem) {
-        customStickers.value = listOf(item) + customStickers.value
-        viewModelScope.launch {
-            if (currentFirebaseUser != null) {
-                firestoreRepository.createCustomSticker(
-                    title = item.title,
-                    imageUri = item.imageUri,
-                    emojiBadge = item.emojiBadge,
-                    borderColorHex = item.borderColorHex,
-                    isVideo = item.isVideo,
-                    frameTimestampMs = item.frameTimestampMs
-                )
-            }
-        }
+        stickerViewModel.saveCustomSticker(item)
     }
 
     fun deleteCustomSticker(id: String) {
-        customStickers.value = customStickers.value.filter { it.id != id }
-        viewModelScope.launch {
-            if (currentFirebaseUser != null) {
-                firestoreRepository.deleteCustomSticker(id)
-            }
-        }
+        stickerViewModel.deleteCustomSticker(id)
     }
 
     override fun onCleared() {
