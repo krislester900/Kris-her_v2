@@ -1,0 +1,121 @@
+# detekt configuration for kris&her v2
+# See https://detekt.dev/docs/gettingstarted/
+
+build:
+  maxIssues: 0
+  weights:
+    complexity: 2
+    LongParameterList: 1
+    style: 1
+    comments: 1
+
+# Formatting rules (ktlint compatible)
+formatting:
+  FinalNewline:
+    active: true
+  Indentation:
+    active: true
+    indentSize: 4
+    continuationIndentSize: 4
+  MaximumLineLength:
+    active: true
+    maxLineLength: 120
+  NoConsecutiveBlankLines:
+    active: true
+    maxConsecutiveBlankLines: 1
+  NoWildcardImports:
+    active: true
+  PackageDeclaration:
+    active: true
+  Spacing:
+    active: true
+  Wrapping:
+    active: true
+    maxLineLength: 120
+
+# Naming conventions
+naming:
+  ClassNaming:
+    active: true
+  FunctionNaming:
+    active: true
+    functionPattern: '^[a-z][a-zA-Z0-9]*$'
+  VariableNaming:
+    active: true
+    variablePattern: '^[a-z][a-zA-Z0-9]*$'
+  ParameterNaming:
+    active: true
+    parameterPattern: '^[a-z][a-zA-Z0-9]*$'
+  ConstantNaming:
+    active: true
+    constantPattern: '^[A-Z][A-Z0-9]*(_[A-Z0-9]+)*$'
+
+# Complexity rules
+complexity:
+  ComplexCondition:
+    active: true
+    threshold: 4
+  ComplexInterface:
+    active: true
+    threshold: 10
+  ComplexMethod:
+    active: true
+    threshold: 15
+  LongMethod:
+    active: true
+    threshold: 60
+  LongParameterList:
+    active: true
+    threshold: 6
+    ignoreDefaultValues: true
+    ignoreAnnotatedParameter: ['Nullable', 'NonNull', 'Optional']
+  TooManyFunctions:
+    active: true
+    thresholdInFiles: 11
+    thresholdInClasses: 11
+    thresholdInInterfaces: 11
+    thresholdInObjects: 11
+    thresholdInEnums: 11
+  NestedBlockDepth:
+    active: true
+    threshold: 4
+
+# Style rules
+style:
+  MagicNumber:
+    active: true
+    ignoreNumbers: ['-1', '0', '1', '2', '10', '100', '1000']
+    ignorePropertyDeclaration: true
+    ignoreLocalVariableDeclaration: true
+    ignoreFunctionDeclaration: true
+  ReturnCount:
+    active: true
+    max: 5
+    excludedFunctions: ['equals', 'hashCode', 'toString']
+  WildcardImport:
+    active: true
+    excludes: ['java.util.*', 'kotlinx.coroutines.*']
+
+# Potential bugs
+bugs:
+  NullSafeCall:
+    active: true
+  ObjectEquality:
+    active: true
+
+# Comments
+comments:
+  CommentOverPrivateFunction:
+    active: false
+  CommentOverPrivateProperty:
+    active: false
+  UndocumentedPublicClass:
+    active: true
+    ignoreWhenAnnotatedWith: ['Preview', 'Composable', 'JvmInline', 'Entity', 'Dao', 'Database', 'JsonClass']
+
+# Exclusions for generated code / test files
+excludes:
+  - '**/build/**'
+  - '**/generated/**'
+  - '**/test/**'
+  - '**/androidTest/**'

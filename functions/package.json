@@ -4,8 +4,15 @@
   "description": "Envoie une notification push quand un message arrive",
   "engines": { "node": "20" },
   "main": "index.js",
+  "scripts": {
+    "test": "node firestore.test.js",
+    "test:emulator": "FIRESTORE_EMULATOR_HOST=localhost:8085 node firestore.test.js"
+  },
   "dependencies": {
     "firebase-admin": "^12.0.0",
     "firebase-functions": "^6.0.0"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^3.0.0"
   }
 }
