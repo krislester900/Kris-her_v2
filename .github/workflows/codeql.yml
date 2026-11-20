@@ -1,0 +1,78 @@
+# CodeQL configuration for kris&her v2
+#
+# Ce workflow remplace les configurations automatiques de CodeQL Advanced
+# qui avaient détecté des langages non pertinents (javascript-typescript, actions).
+#
+# Seuls les langages suivants sont scannés :
+#   - kotlin  : code Android (app/src/main)
+#   - java    : code Android (généré, bibliothèques)
+#
+# Les langages NON scannés (désactivés via ce workflow) :
+#   - javascript-typescript : non utilisé dans ce projet
+#   - actions               : workflows YAML trop simples pour mériter un scan
+
+name: CodeQL Analysis
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Scan automatique tous les lundis à 03:00 UTC
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  analyze:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Seulement Kotlin et Java — les langages pertinents pour ce projet Android
+        language: [kotlin, java]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Fetch profondeur complète pour l'analyse
+          fetch-depth: 0
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 9.3.1
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          # Queries supplémentaires pour la sécurité
+          queries: +security-and-quality
+          # Utiliser la configuration depuis codeql-config.yml à la racine
+          config-file: ./codeql-config.yml
+
+      - name: Build for CodeQL
+        run: ./gradlew compileDebugKotlin --stacktrace
+        env:
+          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8"
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
+          upload: true

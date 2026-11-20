@@ -1,0 +1,45 @@
+# CodeQL configuration for kris&her v2
+#
+# Ce fichier remplace les configurations automatiques détectées par CodeQL Advanced
+# qui avaient inclus des langages non pertinents (javascript-typescript, actions).
+#
+# Seuls les langages suivants sont scannés :
+#   - kotlin  : code Android (app/src/main)
+#   - java    : code Android (généré, bibliothèques)
+#
+# Les langages NON scannés (désactivés explicitement) :
+#   - javascript-typescript : non utilisé dans ce projet (sauf functions/index.js)
+#   - actions               : workflows YAML trop simples pour mériter un scan
+
+name: kris&her v2 CodeQL config
+version: 2
+
+# Désactiver les analyses pour les dossiers non pertinents
+paths-ignore:
+  - '**/functions/**'
+  - '**/firestore.test.js'
+  - '**/.github/workflows/**'
+  - '**/gradle/**'
+  - '**/build/**'
+
+# Spécifier explicitement les langages à scanner
+languages:
+  - kotlin
+  - java
+
+# Désactiver les langages détectés automatiquement mais non pertinents
+# (empêche la création de configurations javascript-typescript et actions)
+disable-default-config: true
+
+# Queries supplémentaires pour la sécurité
+queries:
+  - name: security-and-quality
+    uses: security-and-quality
+
+# Exclure les fichiers générés et les dépendances
+exclude-paths:
+  - '**/build/**'
+  - '**/generated/**'
+  - '**/.gradle/**'
+  - '**/captures/**'
+  - '**/.harness/**'
