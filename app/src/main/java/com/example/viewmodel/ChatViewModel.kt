@@ -3,12 +3,12 @@ package com.example.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.audio.AudioPlaybackState
-import com.example.audio.NewSchoolSoundEffectManager
-import com.example.audio.VoiceAudioManager
 import com.example.data.AppDatabase
 import com.example.data.ChatRepository
 import com.example.data.FirestoreChatRepository
+import com.example.data.PresenceManager
+import com.example.viewmodel.NotificationViewModel
+import com.example.viewmodel.StickerViewModel
 import com.example.model.Chat
 import com.example.model.ChatMessagesSnapshot
 import com.example.model.ConversationEntity
@@ -18,7 +18,9 @@ import com.example.model.MessageStatus
 import com.example.model.MessageType
 import com.example.model.StatusStory
 import com.example.model.UserProfile
+import com.example.security.VaultSecurityManager
 import com.example.ui.components.BubbleStyle
+import com.example.viewmodel.AudioManagerViewModel
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
 import kotlinx.coroutines.Job
@@ -63,16 +65,19 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase.getDatabase(application)
     private val repository = ChatRepository(database.conversationDao(), database.messageDao())
     private val firestoreRepository = FirestoreChatRepository(application)
-    val voiceAudioManager = VoiceAudioManager(application)
-    val soundEffectManager = NewSchoolSoundEffectManager(application)
+    private val presenceManager = PresenceManager(firestoreRepository.getFirestore(), viewModelScope)
+    private val audioManagerViewModel = AudioManagerViewModel(application)
+    private val stickerViewModel = StickerViewModel(application, firestoreRepository)
+    private val notificationViewModel = NotificationViewModel(application, firestoreRepository)
 
-    val audioPlaybackState: StateFlow<AudioPlaybackState> = voiceAudioManager.playbackState
-    val isSoundEffectsEnabled: StateFlow<Boolean> = soundEffectManager.isSoundEnabled
+    val audioPlaybackState: StateFlow<AudioPlaybackState> = audioManagerViewModel.audioPlaybackState
+    val isSoundEffectsEnabled: StateFlow<Boolean> = audioManagerViewModel.isSoundEffectsEnabled
 
     // Chat Bubbles Style & State
     val bubbleStyle = MutableStateFlow(BubbleStyle.COMIC)
     val replyingToMessage = MutableStateFlow<MessageEntity?>(null)
     val floatingBubbleConversationId = MutableStateFlow<Long?>(null)
+    val peerOnlineStatus = MutableStateFlow<Boolean>(false)
 
     private val prefs = application.getSharedPreferences("kris_her_prefs", android.content.Context.MODE_PRIVATE)
 
@@ -83,71 +88,31 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     val userProfile = MutableStateFlow<UserProfile?>(null)
     val isSavingProfile = MutableStateFlow(false)
     val profileSaveMessage = MutableStateFlow<String?>(null)
-    val accountCreationBanner = MutableStateFlow<String?>(null)
+    val accountCreationBanner: StateFlow<String?> = notificationViewModel.accountCreationBanner
 
-    fun dismissAccountCreationBanner() {
-        accountCreationBanner.value = null
+    /**
+     * Erreur globale à afficher à l'utilisateur (Snackbar, bannière, dialogue).
+     * Utilisé pour propager les échecs qui étaient auparavant silencieux.
+     */
+    val errorMessage = MutableStateFlow<String?>(null)
+
+    fun dismissErrorMessage() { errorMessage.value = null }
+
+    /**
+     * Enregistre une erreur à destination de l'utilisateur.
+     * Évite les doublons si le même message est déjà affiché.
+     */
+    fun reportError(message: String) {
+        if (errorMessage.value != message) {
+            errorMessage.value = message
+        }
     }
 
-    val customStickers = MutableStateFlow<List<CustomStickerItem>>(
-        listOf(
-            CustomStickerItem(
-                id = "stk_preset_1",
-                title = "KRIS FIRE",
-                author = "Kris",
-                imageUri = "preset://🔥",
-                emojiBadge = "🔥",
-                borderColorHex = "#FF5500",
-                isVideo = false
-            ),
-            CustomStickerItem(
-                id = "stk_preset_2",
-                title = "HER LOVE",
-                author = "Her",
-                imageUri = "preset://❤️",
-                emojiBadge = "❤️",
-                borderColorHex = "#FF2A85",
-                isVideo = false
-            ),
-            CustomStickerItem(
-                id = "stk_preset_3",
-                title = "ZAP POW",
-                author = "Kris",
-                imageUri = "preset://⚡",
-                emojiBadge = "⚡",
-                borderColorHex = "#FFD700",
-                isVideo = false
-            ),
-            CustomStickerItem(
-                id = "stk_preset_4",
-                title = "ROYAL QUEEN",
-                author = "Her",
-                imageUri = "preset://👑",
-                emojiBadge = "👑",
-                borderColorHex = "#00FF66",
-                isVideo = false
-            ),
-            CustomStickerItem(
-                id = "stk_preset_5",
-                title = "DIAMOND",
-                author = "Kris",
-                imageUri = "preset://💎",
-                emojiBadge = "💎",
-                borderColorHex = "#00F0FF",
-                isVideo = false
-            ),
-            CustomStickerItem(
-                id = "stk_preset_6",
-                title = "DEAD LOL",
-                author = "Her",
-                imageUri = "preset://💀",
-                emojiBadge = "💀",
-                borderColorHex = "#B026FF",
-                isVideo = false
-            )
-        )
-    )
+    fun dismissAccountCreationBanner() {
+        notificationViewModel.dismissAccountCreationBanner()
+    }
 
+    val customStickers: StateFlow<List<CustomStickerItem>> = stickerViewModel.customStickers
     private var lastTrackedConversationId: Long? = null
     private var lastTrackedMessageId: Long? = null
 
@@ -268,13 +233,13 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     val recordingAmplitudes = MutableStateFlow<List<Float>>(emptyList())
     private var recordTimerJob: Job? = null
 
-    // App Lock & Vault Security state
-    val hasPin = MutableStateFlow(prefs.contains("vault_pin_hash"))
-    val isPinProtectionEnabled = MutableStateFlow(prefs.getBoolean("vault_pin_enabled", false) && prefs.contains("vault_pin_hash"))
-    // Verrouillé dès le lancement si le code PIN est activé
-    val isAppLocked = MutableStateFlow(isPinProtectionEnabled.value)
-    val enteredPin = MutableStateFlow("")
-    val pinError = MutableStateFlow(false)
+    // App Lock & Vault Security — délégué à VaultSecurityManager (extrait P1-3)
+    private val vaultSecurityManager = VaultSecurityManager.create(application, viewModelScope)
+    val hasPin: StateFlow<Boolean> = vaultSecurityManager.hasPin
+    val isPinProtectionEnabled: StateFlow<Boolean> = vaultSecurityManager.isPinProtectionEnabled
+    val isAppLocked: StateFlow<Boolean> = vaultSecurityManager.isAppLocked
+    val enteredPin: StateFlow<String> = vaultSecurityManager.enteredPin
+    val pinError: StateFlow<Boolean> = vaultSecurityManager.pinError
 
     // Theme mode (Monochrome Black & White)
     val themeMode = MutableStateFlow(ThemeMode.DARK)
@@ -283,8 +248,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     val ephemeralTimerHours = MutableStateFlow(24)
 
     // Active call simulation
-    val activeCall = MutableStateFlow<ActiveCallState?>(null)
-    private var callTimerJob: Job? = null
+    // val activeCall = MutableStateFlow<ActiveCallState?>(null)
+    // private var callTimerJob: Job? = null
 
     // Empty list of stories (no demo data)
     val stories = MutableStateFlow<List<StatusStory>>(emptyList())
@@ -295,7 +260,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         val savedPhoto = prefs.getString("profile_photo_url", "")
         if (!savedName.isNullOrBlank()) {
             userProfile.value = UserProfile(
-                userId = runCatching { Firebase.auth.currentUser?.uid }.getOrNull() ?: "kris_local_user",
+                userId = runCatching { Firebase.auth.currentUser?.uid }.getOrNull() ?: "local_user_" + System.currentTimeMillis(),
                 displayName = savedName,
                 phoneNumber = savedPhone ?: "",
                 photoUrl = savedPhoto ?: "",
@@ -358,32 +323,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         android.util.Log.e("ChatViewModel", "observeChats warning: ${e.message}")
                     }
                 }
-                launch {
-                    try {
-                        firestoreRepository.observeCustomStickers().collect { firestoreStickers ->
-                            if (firestoreStickers.isNotEmpty()) {
-                                val items = firestoreStickers.map { doc ->
-                                    CustomStickerItem(
-                                        id = doc.id,
-                                        title = doc.title,
-                                        author = doc.author,
-                                        imageUri = doc.imageUri,
-                                        emojiBadge = doc.emojiBadge,
-                                        borderColorHex = doc.borderColorHex,
-                                        isVideo = doc.isVideo,
-                                        frameTimestampMs = doc.frameTimestampMs,
-                                        createdAt = doc.createdAt?.toDate()?.time ?: System.currentTimeMillis()
-                                    )
-                                }
-                                val existingIds = items.map { it.id }.toSet()
-                                val presets = customStickers.value.filter { it.id !in existingIds }
-                                customStickers.value = items + presets
-                            }
-                        }
-                    } catch (e: Exception) {
-                        android.util.Log.e("ChatViewModel", "observeCustomStickers warning: ${e.message}")
-                    }
-                }
+                stickerViewModel.initStickers()
             }
         }
 
@@ -433,7 +373,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         // A new message has arrived in the active conversation
                         lastTrackedMessageId = last.id
                         if (last.senderId != "me" && last.type != MessageType.SYSTEM) {
-                            soundEffectManager.playReceivedSound()
+                            audioManagerViewModel.playReceivedSoundEffect()
                         }
                     }
                 }
@@ -597,12 +537,23 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         currentConversationId.value = id
         viewModelScope.launch {
             repository.markAsRead(id)
+            // Observer la présence du peer
+            val conv = repository.getConversationOnce(id)
+            conv?.let { conversation ->
+                if (conversation.peerUid.isNotBlank()) {
+                    presenceManager.observePresence(conversation.peerUid)
+                        .collect { isOnline ->
+                            peerOnlineStatus.value = isOnline
+                        }
+                }
+            }
         }
     }
 
     fun closeConversation() {
-        voiceAudioManager.stopAudio()
+        audioManagerViewModel.stopAudio()
         currentConversationId.value = null
+        peerOnlineStatus.value = false
     }
 
     fun setBubbleStyle(style: BubbleStyle) {
@@ -626,7 +577,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         phoneNumber: String,
         photoUrl: String
     ) {
-        val uid = runCatching { Firebase.auth.currentUser?.uid }.getOrNull() ?: "kris_local_user"
+        val uid = runCatching { Firebase.auth.currentUser?.uid }.getOrNull() ?: "local_user_" + System.currentTimeMillis()
         val cleanName = displayName.trim().ifBlank { "Kris" }
         val cleanPhone = phoneNumber.trim()
 
@@ -666,31 +617,18 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
             val googleEmail = runCatching { Firebase.auth.currentUser?.email }.getOrNull()
                 ?: prefs.getString("google_auth_email", null)
-                ?: "krislester900@gmail.com"
+                ?: ""
 
             // 1. Send official account confirmation email directly to the Google account mailbox (Gmail)
-            try {
-                com.example.util.AccountEmailService.dispatchAccountCreationEmail(
+            //    L'email n'est envoyé que si l'utilisateur est connecté avec un compte Google.
+            // 1. Send official account confirmation email (delegated to NotificationViewModel)
+            if (googleEmail.isNotBlank()) {
+                notificationViewModel.sendAccountCreationEmail(
                     email = googleEmail,
                     displayName = cleanName,
-                    phoneNumber = cleanPhone,
-                    firestore = firestoreRepository.getFirestore()
+                    phoneNumber = cleanPhone
                 )
-                android.util.Log.i("ChatViewModel", "Email officiel expédié dans la boîte mail Google : $googleEmail")
-            } catch (e: Exception) {
-                android.util.Log.w("ChatViewModel", "Erreur envoi email boîte mail: ${e.message}")
             }
-
-            // 2. Post Android system status bar notification
-            try {
-                com.example.util.NotificationHelper.showAccountCreatedNotification(getApplication(), googleEmail)
-            } catch (e: Exception) {
-                android.util.Log.w("ChatViewModel", "Notification error: ${e.message}")
-            }
-
-            // 3. Set celebratory in-app banner confirming email dispatched to mailbox
-            accountCreationBanner.value = "Un message de confirmation a été envoyé dans la boîte mail de votre compte Google ($googleEmail) !"
-
             // 4. Insert confirmation message to inbox so user has immediate proof on the account
             try {
                 val googleSecurityConv = repository.findConversationByTitle("Bienvenue sur kris&her")
@@ -774,7 +712,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             !isPortableMedia(mediaUri)
 
         // Play New-School comic sound effect when message is sent
-        soundEffectManager.playSentSound()
+        audioManagerViewModel.playSentSoundEffect()
 
         viewModelScope.launch {
             val remoteId = if (isRemoteChat) UUID.randomUUID().toString() else ""
@@ -843,6 +781,16 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                             status = MessageStatus.READ
                         )
                     )
+                    // Remonter l'erreur à l'UI (Snackbar) en plus du message système.
+                    reportError(
+                        if (uploadFailed && uploadError is com.example.data.MediaTooLargeException) {
+                            "Fichier trop lourd pour l'envoi (330 Ko max)"
+                        } else if (uploadFailed) {
+                            "Le fichier n'a pas pu être envoyé"
+                        } else {
+                            "Message non envoyé — vérifiez votre connexion"
+                        }
+                    )
                 }
             }
             // Conversation locale sans interlocuteur inscrit : rien n'est délivré et aucune réponse n'est simulée.
@@ -850,75 +798,31 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun startAudioRecording() {
-        voiceAudioManager.stopAudio()
-        voiceAudioManager.startRecording()
-        isRecordingAudio.value = true
-        isRecordingPaused.value = false
-        recordingDurationSec.value = 0
-        recordingAmplitudes.value = emptyList()
-        recordTimerJob?.cancel()
-        recordTimerJob = viewModelScope.launch {
-            var tickCount = 0
-            while (isRecordingAudio.value) {
-                delay(100)
-                if (!isRecordingPaused.value) {
-                    val amp = voiceAudioManager.getLiveAmplitude()
-                    val currentList = recordingAmplitudes.value.toMutableList()
-                    currentList.add(amp)
-                    if (currentList.size > 28) currentList.removeAt(0)
-                    recordingAmplitudes.value = currentList
-
-                    tickCount++
-                    if (tickCount % 10 == 0) {
-                        recordingDurationSec.value += 1
-                    }
-                }
-            }
-        }
+        audioManagerViewModel.startAudioRecording()
     }
 
     fun togglePauseRecording() {
-        if (!isRecordingAudio.value) return
-        if (isRecordingPaused.value) {
-            voiceAudioManager.resumeRecording()
-            isRecordingPaused.value = false
-        } else {
-            voiceAudioManager.pauseRecording()
-            isRecordingPaused.value = true
-        }
+        audioManagerViewModel.togglePauseRecording()
     }
 
     fun stopAndSendAudioRecording() {
-        val timerDuration = recordingDurationSec.value
-        recordTimerJob?.cancel()
-        isRecordingAudio.value = false
-        isRecordingPaused.value = false
-        val (filePath, fileDuration) = voiceAudioManager.stopRecording()
-        val finalDuration = if (fileDuration > 0) fileDuration else timerDuration.coerceAtLeast(1)
-
-        if (finalDuration >= 1) {
+        val (filePath, durationSec) = audioManagerViewModel.stopRecording()
+        if (durationSec >= 1) {
             sendMessage(
-                content = "🎤 Note vocale (${formatSeconds(finalDuration)})",
+                content = "🎤 Note vocale (${formatSeconds(durationSec)})",
                 type = MessageType.AUDIO,
-                audioDuration = finalDuration,
+                audioDuration = durationSec,
                 mediaUri = filePath
             )
         }
-        recordingDurationSec.value = 0
-        recordingAmplitudes.value = emptyList()
     }
 
     fun cancelAudioRecording() {
-        voiceAudioManager.cancelRecording()
-        recordTimerJob?.cancel()
-        isRecordingAudio.value = false
-        isRecordingPaused.value = false
-        recordingDurationSec.value = 0
-        recordingAmplitudes.value = emptyList()
+        audioManagerViewModel.cancelAudioRecording()
     }
 
     fun playAudio(messageId: Long, mediaUri: String?, durationSec: Int) {
-        voiceAudioManager.playAudio(messageId, mediaUri, durationSec)
+        audioManagerViewModel.playAudio(messageId, mediaUri, durationSec)
     }
 
     fun togglePinConversation(id: Long) {
@@ -1092,128 +996,27 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // Call Actions
-    fun startCall(isVideo: Boolean) {
-        val conv = activeConversation.value ?: return
-        callTimerJob?.cancel()
-        activeCall.value = ActiveCallState(
-            conversationTitle = conv.title,
-            avatarInitials = conv.avatarInitials,
-            avatarColorHex = conv.avatarColorHex,
-            isVideo = isVideo,
-            durationSeconds = 0
-        )
-        callTimerJob = viewModelScope.launch {
-            while (activeCall.value != null) {
-                delay(1000)
-                activeCall.value = activeCall.value?.copy(
-                    durationSeconds = (activeCall.value?.durationSeconds ?: 0) + 1
-                )
-            }
-        }
-    }
+    // PIN vault security actions — déléguées à VaultSecurityManager (extrait P1-3)
 
-    fun toggleCallMute() {
-        activeCall.value = activeCall.value?.copy(isMuted = !(activeCall.value?.isMuted ?: false))
-    }
-
-    fun toggleCallSpeaker() {
-        activeCall.value = activeCall.value?.copy(isSpeaker = !(activeCall.value?.isSpeaker ?: false))
-    }
-
-    fun endCall() {
-        callTimerJob?.cancel()
-        activeCall.value = null
-    }
-
-    // PIN vault security actions
-    private fun hashPin(pin: String, salt: ByteArray): ByteArray {
-        val spec = javax.crypto.spec.PBEKeySpec(pin.toCharArray(), salt, 60_000, 256)
-        return javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(spec).encoded
-    }
-
-    private fun verifyPin(pin: String): Boolean {
-        val saltB64 = prefs.getString("vault_pin_salt", null) ?: return false
-        val hashB64 = prefs.getString("vault_pin_hash", null) ?: return false
-        val salt = android.util.Base64.decode(saltB64, android.util.Base64.NO_WRAP)
-        val expected = android.util.Base64.decode(hashB64, android.util.Base64.NO_WRAP)
-        return java.security.MessageDigest.isEqual(expected, hashPin(pin, salt))
-    }
-
-    /** Définit (ou change) le code PIN à 4 chiffres choisi par l'utilisateur ; il est stocké salé et haché. */
+    /**
+     * Définit (ou change) le code PIN à 4 chiffres choisi par l'utilisateur.
+     * Le hachage est effectué hors du thread principal par VaultSecurityManager.
+     *
+     * @return true si le format du PIN est valide (l'enregistrement est asynchrone).
+     */
     fun setPin(pin: String): Boolean {
         if (pin.length != 4 || !pin.all { it.isDigit() }) return false
-        val salt = ByteArray(16).also { java.security.SecureRandom().nextBytes(it) }
-        prefs.edit()
-            .putString("vault_pin_salt", android.util.Base64.encodeToString(salt, android.util.Base64.NO_WRAP))
-            .putString("vault_pin_hash", android.util.Base64.encodeToString(hashPin(pin, salt), android.util.Base64.NO_WRAP))
-            .putBoolean("vault_pin_enabled", true)
-            .putInt("vault_failed_attempts", 0)
-            .putLong("vault_lock_until", 0L)
-            .apply()
-        hasPin.value = true
-        isPinProtectionEnabled.value = true
+        vaultSecurityManager.setPin(pin)
         return true
     }
 
-    fun appendPinDigit(digit: String) {
-        val now = System.currentTimeMillis()
-        // Blocage temporaire après trop d'essais ratés
-        if (now < prefs.getLong("vault_lock_until", 0L)) {
-            pinError.value = true
-            return
-        }
-        if (digit.length != 1 || !digit[0].isDigit()) return
-        if (enteredPin.value.length < 4) {
-            enteredPin.value += digit
-            pinError.value = false
-            if (enteredPin.value.length == 4) {
-                val attempt = enteredPin.value
-                viewModelScope.launch {
-                    val ok = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { verifyPin(attempt) }
-                    if (ok) {
-                        prefs.edit().putInt("vault_failed_attempts", 0).putLong("vault_lock_until", 0L).apply()
-                        isAppLocked.value = false
-                        enteredPin.value = ""
-                    } else {
-                        val failed = prefs.getInt("vault_failed_attempts", 0) + 1
-                        // À partir du 5e échec : 30 s, 60 s, 2 min, 4 min, 8 min...
-                        val lockMs = if (failed >= 5) 30_000L * (1L shl minOf(failed - 5, 4)) else 0L
-                        prefs.edit()
-                            .putInt("vault_failed_attempts", failed)
-                            .putLong("vault_lock_until", if (lockMs > 0) System.currentTimeMillis() + lockMs else 0L)
-                            .apply()
-                        pinError.value = true
-                        delay(600)
-                        enteredPin.value = ""
-                    }
-                }
-            }
-        }
-    }
+    fun appendPinDigit(digit: String) = vaultSecurityManager.appendPinDigit(digit)
 
-    fun deletePinDigit() {
-        if (enteredPin.value.isNotEmpty()) {
-            enteredPin.value = enteredPin.value.dropLast(1)
-            pinError.value = false
-        }
-    }
+    fun deletePinDigit() = vaultSecurityManager.deletePinDigit()
 
-    fun togglePinProtection(enabled: Boolean) {
-        // Sans code choisi, l'écran demande d'abord d'en définir un (setPin)
-        if (enabled && !hasPin.value) return
-        isPinProtectionEnabled.value = enabled
-        prefs.edit().putBoolean("vault_pin_enabled", enabled).apply()
-        if (!enabled) {
-            isAppLocked.value = false
-        }
-    }
+    fun togglePinProtection(enabled: Boolean) = vaultSecurityManager.togglePinProtection(enabled)
 
-    fun lockVaultNow() {
-        if (isPinProtectionEnabled.value) {
-            enteredPin.value = ""
-            isAppLocked.value = true
-        }
-    }
+    fun lockVaultNow() = vaultSecurityManager.lockVaultNow()
 
     fun postNewStatus(caption: String, emoji: String) {
         val newStory = StatusStory(
@@ -1234,15 +1037,15 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun toggleSoundEffects() {
-        soundEffectManager.toggleSound()
+        audioManagerViewModel.toggleSoundEffects()
     }
 
     fun playSentSoundEffect() {
-        soundEffectManager.playSentSound()
+        audioManagerViewModel.playSentSoundEffect()
     }
 
     fun playReceivedSoundEffect() {
-        soundEffectManager.playReceivedSound()
+        audioManagerViewModel.playReceivedSoundEffect()
     }
 
     fun saveUserProfile(
@@ -1268,7 +1071,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 profileSaveMessage.value = "Profil & Numéro synchronisés avec Firestore ! ☁️"
                 onComplete?.invoke(true)
             } else {
-                profileSaveMessage.value = "Erreur: ${result.exceptionOrNull()?.message ?: "Échec"}"
+                val detail = result.exceptionOrNull()?.message ?: "Échec de la synchronisation"
+                profileSaveMessage.value = "Erreur: $detail"
+                reportError("Impossible de synchroniser le profil : $detail")
                 onComplete?.invoke(false)
             }
         }
@@ -1284,34 +1089,17 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun saveCustomSticker(item: CustomStickerItem) {
-        customStickers.value = listOf(item) + customStickers.value
-        viewModelScope.launch {
-            if (currentFirebaseUser != null) {
-                firestoreRepository.createCustomSticker(
-                    title = item.title,
-                    imageUri = item.imageUri,
-                    emojiBadge = item.emojiBadge,
-                    borderColorHex = item.borderColorHex,
-                    isVideo = item.isVideo,
-                    frameTimestampMs = item.frameTimestampMs
-                )
-            }
-        }
+        stickerViewModel.saveCustomSticker(item)
     }
 
     fun deleteCustomSticker(id: String) {
-        customStickers.value = customStickers.value.filter { it.id != id }
-        viewModelScope.launch {
-            if (currentFirebaseUser != null) {
-                firestoreRepository.deleteCustomSticker(id)
-            }
-        }
+        stickerViewModel.deleteCustomSticker(id)
     }
 
     override fun onCleared() {
         super.onCleared()
-        voiceAudioManager.stopAudio()
-        soundEffectManager.release()
+        audioManagerViewModel.stopAudio()
+        audioManagerViewModel.release()
     }
 
     private fun formatSeconds(sec: Int): String {

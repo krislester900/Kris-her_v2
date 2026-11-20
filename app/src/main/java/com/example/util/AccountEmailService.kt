@@ -1,23 +1,23 @@
 package com.example.util
 
 import android.util.Log
-import com.google.firebase.Firebase
-import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
-import java.io.OutputStreamWriter
-import java.net.HttpURLConnection
-import java.net.URL
 
 object AccountEmailService {
     private const val TAG = "AccountEmailService"
-    private const val API_KEY = "AIzaSyDP7nHcIMk6W843rd7WJtS3hPgLZ_UZjEc"
 
     /**
-     * Sends an official account confirmation email directly to the user's Google mailbox (Gmail).
-     * Uses Google's Identity Toolkit API and Firebase Auth to dispatch the message into their inbox.
+     * Envoie un email de confirmation de création de compte.
+     *
+     * L'envoi s'effectue uniquement via la collection Firestore `mail`, traitée par
+     * l'extension Firebase "Trigger Email" (plan Blaze requis).
+     *
+     * Les appels directs à Google Identity Toolkit sendOobCode (requestType PASSWORD_RESET),
+     * Firebase Auth sendPasswordResetEmail ou sendEmailVerification sont des détournements d'API :
+     * ils envoient un lien de réinitialisation de mot de passe ou de vérification, et non un
+     * email de bienvenue. Ils ne doivent pas être utilisés à cette fin.
      */
     suspend fun dispatchAccountCreationEmail(
         email: String,
@@ -27,60 +27,7 @@ object AccountEmailService {
     ): Boolean = withContext(Dispatchers.IO) {
         var emailSent = false
 
-        // Method 1: Google Identity Toolkit sendOobCode (delivers directly to Gmail mailbox)
-        try {
-            val endpointUrl = URL("https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=$API_KEY")
-            val conn = endpointUrl.openConnection() as HttpURLConnection
-            conn.requestMethod = "POST"
-            conn.setRequestProperty("Content-Type", "application/json")
-            conn.doOutput = true
-            conn.connectTimeout = 10000
-            conn.readTimeout = 10000
-
-            val jsonBody = JSONObject().apply {
-                put("requestType", "PASSWORD_RESET")
-                put("email", email)
-            }
-
-            OutputStreamWriter(conn.outputStream).use { writer ->
-                writer.write(jsonBody.toString())
-                writer.flush()
-            }
-
-            val responseCode = conn.responseCode
-            if (responseCode in 200..299) {
-                emailSent = true
-                Log.i(TAG, "Email de confirmation expédié avec succès sur la boîte mail Google : $email (Code $responseCode)")
-            } else {
-                val errorStream = conn.errorStream?.bufferedReader()?.use { it.readText() }
-                Log.w(TAG, "API sendOobCode response: $responseCode - $errorStream")
-            }
-            conn.disconnect()
-        } catch (e: Exception) {
-            Log.e(TAG, "Erreur appel Identity Toolkit pour $email : ${e.message}")
-        }
-
-        // Method 2: Firebase Auth SDK direct send
-        try {
-            Firebase.auth.sendPasswordResetEmail(email)
-            emailSent = true
-            Log.i(TAG, "sendPasswordResetEmail déclenché pour $email")
-        } catch (e: Exception) {
-            Log.w(TAG, "sendPasswordResetEmail exception: ${e.message}")
-        }
-
-        try {
-            val user = Firebase.auth.currentUser
-            if (user != null && user.email == email) {
-                user.sendEmailVerification()
-                emailSent = true
-                Log.i(TAG, "sendEmailVerification déclenché pour $email")
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "sendEmailVerification exception: ${e.message}")
-        }
-
-        // Method 3: Firestore mail queue for cloud email extension
+        // Méthode : Firestore mail queue for cloud email extension
         if (firestore != null) {
             try {
                 val mailDoc = hashMapOf(
@@ -103,8 +50,9 @@ object AccountEmailService {
                 )
                 firestore.collection("mail").add(mailDoc)
                 Log.i(TAG, "Document mail ajouté à Firestore pour expédition")
+                emailSent = true
             } catch (e: Exception) {
-                Log.w(TAG, "Ajout document mail Firestore note: ${e.message}")
+                Log.w(TAG, "Ajout document mail Firestore impossible: ${e.message}")
             }
         }
 

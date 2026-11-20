@@ -414,27 +414,7 @@ fun ChatRoomScreen(
                         )
                     }
                 } else {
-                    IconButton(
-                        onClick = { onStartCall(false) },
-                        modifier = Modifier.testTag("audio_call_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Call,
-                            contentDescription = "Appel audio",
-                            tint = PureWhite
-                        )
-                    }
-
-                    IconButton(
-                        onClick = { onStartCall(true) },
-                        modifier = Modifier.testTag("video_call_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Videocam,
-                            contentDescription = "Appel vidéo",
-                            tint = PureWhite
-                        )
-                    }
+                    // Appels non implémentés (WebRTC requis) - boutons retirés pour éviter fausses attentes
                 }
 
                 IconButton(

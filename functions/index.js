@@ -6,10 +6,12 @@ const { initializeApp } = require("firebase-admin/app");
 const { getFirestore } = require("firebase-admin/firestore");
 const { getMessaging } = require("firebase-admin/messaging");
 
-// Base Firestore utilisée par l'app (identique à firebase.json / strings.xml)
-const DATABASE_ID = "ai-studio-android-remixkri-5e20fb90-aca8-4a6c-9427-e49c2f1a40ba";
-// IMPORTANT : doit être la région de VOTRE base Firestore (Console Firebase > Firestore > Données > emplacement).
-const REGION = "us-central1";
+// Base Firestore utilisée par l'app (identique à firebase.json / strings.xml).
+// Surchargeable via la variable d'environnement FIRESTORE_DATABASE_ID.
+const DATABASE_ID = process.env.FIRESTORE_DATABASE_ID || "ai-studio-android-remixkri-5e20fb90-aca8-4a6c-9427-e49c2f1a40ba";
+// Région de la base Firestore. Surchargeable via FIRESTORE_REGION.
+// IMPORTANT : doit correspondre à l'emplacement de votre base (Console Firebase > Firestore > Données > emplacement).
+const REGION = process.env.FIRESTORE_REGION || "us-central1";
 
 initializeApp();
 const db = getFirestore(DATABASE_ID);

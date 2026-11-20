@@ -42,10 +42,13 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
@@ -225,9 +228,19 @@ fun KrisAndHerApp(viewModel: ChatViewModel) {
         return
     }
 
+    // Snackbar pour les erreurs remontées par le ViewModel (P2-5)
+    val snackbarHostState = remember { SnackbarHostState() }
+    val errorMessage by viewModel.errorMessage.collectAsStateWithLifecycle()
+    LaunchedEffect(errorMessage) {
+        val message = errorMessage ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(message)
+        viewModel.dismissErrorMessage()
+    }
+
     // Main App Scaffold
     Scaffold(
         modifier = Modifier.fillMaxSize(),
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
             if (currentConvId == null) {
                 Surface(
@@ -321,7 +334,6 @@ fun KrisAndHerApp(viewModel: ChatViewModel) {
                     onPlayAudio = { msgId, mediaUri, duration ->
                         viewModel.playAudio(msgId, mediaUri, duration)
                     },
-                    onStartCall = { isVideo -> viewModel.startCall(isVideo) },
                     onAddReaction = { msgId, emoji -> viewModel.addReaction(msgId, emoji) },
                     onDeleteMessage = { msgId -> viewModel.deleteMessage(msgId) },
                     customStickers = customStickers,

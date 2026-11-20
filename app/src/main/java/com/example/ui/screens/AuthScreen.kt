@@ -178,11 +178,8 @@ fun onGoogleSignInClicked(
         try {
             val activity = findActivity(context)
             if (activity == null) {
-                // Graceful fallback for non-activity context
-                context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE).edit()
-                    .putString("google_auth_email", "krislester900@gmail.com")
-                    .apply()
-                onAuthSuccess("Kris", "krislester900@gmail.com", null)
+                Log.e("Auth", "No activity context for Google Sign-In")
+                onAuthCancelled()
                 return@launch
             }
             val result = credentialManager.getCredential(activity, request)
@@ -213,26 +210,18 @@ fun onGoogleSignInClicked(
                 }
                 onAuthSuccess(name, email, photo)
             } else {
-                context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE).edit()
-                    .putString("google_auth_email", "krislester900@gmail.com")
-                    .apply()
-                onAuthSuccess("Kris", "krislester900@gmail.com", null)
+                Log.w("Auth", "Unexpected credential type received")
+                onAuthCancelled()
             }
         } catch (e: GetCredentialCancellationException) {
             onAuthCancelled()
         } catch (_: NoCredentialException) {
-            // Emulator or system without configured Google account: connect seamlessly with user account
-            context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE).edit()
-                .putString("google_auth_email", "krislester900@gmail.com")
-                .apply()
-            onAuthSuccess("Kris", "krislester900@gmail.com", null)
+            // Emulator or system without configured Google account: cannot proceed without Google Sign-In
+            Log.w("Auth", "No Google account configured on device")
+            onAuthCancelled()
         } catch (e: Exception) {
             Log.e("Auth", "Google sign in issue: ${e.message}")
-            // Provide seamless connection without exposing technical errors or sensitive hashes
-            context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE).edit()
-                .putString("google_auth_email", "krislester900@gmail.com")
-                .apply()
-            onAuthSuccess("Kris", "krislester900@gmail.com", null)
+            onAuthCancelled()
         }
     }
 }
@@ -472,51 +461,6 @@ fun AuthScreen(
 
                         Spacer(modifier = Modifier.height(14.dp))
 
-                        // Bouton de validation directe avec le compte Google de l'utilisateur
-                        OutlinedButton(
-                            onClick = {
-                                isLoading = false
-                                context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE).edit()
-                                    .putString("google_auth_email", "krislester900@gmail.com")
-                                    .apply()
-                                currentStep = OnboardingStep.PROFILE_INFO
-                                onAuthSuccess()
-                            },
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = NewSchoolCyan
-                            ),
-                            border = BorderStroke(1.2.dp, NewSchoolCyan.copy(alpha = 0.6f)),
-                            shape = RoundedCornerShape(14.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(50.dp)
-                                .testTag("direct_google_validation_button")
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.Check,
-                                    contentDescription = null,
-                                    tint = NewSchoolCyan,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "Valider la session Google",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(24.dp))
-
-                        Text(
-                            text = "Un message officiel de confirmation sera envoyé directement dans la boîte mail de votre compte Google dès la validation.",
-                            color = PureWhite.copy(alpha = 0.6f),
-                            fontSize = 12.sp,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(horizontal = 16.dp)
-                        )
                     }
 
                     // ÉTAPE 2 : Nom de profil et Numéro de téléphone SEULEMENT

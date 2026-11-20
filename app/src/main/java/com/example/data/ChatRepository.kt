@@ -4,18 +4,13 @@ import com.example.model.ConversationEntity
 import com.example.model.MessageEntity
 import com.example.model.MessageStatus
 import com.example.model.MessageType
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 
 class ChatRepository(
     private val conversationDao: ConversationDao,
     private val messageDao: MessageDao
 ) {
-    private val repositoryScope = CoroutineScope(Dispatchers.IO)
 
     val allConversations: Flow<List<ConversationEntity>> = conversationDao.getAllConversations()
 
